@@ -1,0 +1,1610 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1a2744">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Descargas">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Sistema de Descargas - v27</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700;800&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f0f2f5; --card: #ffffff; --primary: #1a2744; --accent: #2952a3;
+    --accent2: #4a90d9; --line: #c8d0e0; --text: #1a2744; --muted: #6b7a99;
+    --success: #1a7a4a; --danger: #c0392b; --warn: #e67e22; --input-bg: #f7f9fc;
+    --shadow: 0 2px 16px rgba(26,39,68,0.10);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'IBM Plex Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  
+  header { background: var(--primary); color: #fff; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+  header h1 { font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 700; text-transform: uppercase; }
+  
+  .tabs { background: var(--primary); display: flex; padding: 0 24px; gap: 2px; border-top: 1px solid rgba(255,255,255,0.08); position: sticky; top: 56px; z-index: 99; box-shadow: 0 2px 6px rgba(0,0,0,0.18); }
+  .tab-btn { background: none; border: none; color: rgba(255,255,255,0.5); font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 600; padding: 12px 18px; cursor: pointer; border-bottom: 3px solid transparent; }
+  .tab-btn.active { color: #fff; border-bottom-color: var(--accent2); }
+  
+  .container { max-width: 1100px; margin: 0 auto; padding: 28px 20px; }
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* TICKET */
+  .preview-wrap { display: flex; flex-direction: column; align-items: center; padding: 20px 0; gap: 20px; }
+  .card-print { width: 320px; background: #fff; border: 2px solid #000060; padding: 15px; font-family: 'IBM Plex Mono', monospace; position: relative; }
+  .card-print-title { text-align: center; font-size: 13px; font-weight: 700; color: #000060; margin-bottom: 15px; padding-bottom: 8px; border-bottom: 1px solid #000060; }
+  .card-line { display: flex; align-items: flex-end; gap: 5px; margin-bottom: 12px; }
+  .card-lbl { font-size: 10px; font-weight: 700; color: #000060; white-space: nowrap; }
+  .card-val { flex: 1; border-bottom: 1px solid #000060; font-size: 12px; min-height: 18px; color: #333; text-align: center; }
+  .card-sep { font-size: 11px; font-weight: 700; color: #000060; }
+  .destaque-valor { font-size: 18px !important; font-weight: 800 !important; color: #000 !important; border-bottom: 1px solid #000 !important; text-align: center !important; }
+  .card-val-placa-group { flex: 1; display: flex; justify-content: center; align-items: center; border-bottom: 1px solid #000; }
+
+  /* FORMULÁRIO */
+  .form-card { background: var(--card); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; margin-bottom: 24px; }
+  .form-header { background: var(--primary); padding: 18px 28px; display: flex; align-items: center; justify-content: space-between; color: #fff; }
+  .form-body { padding: 28px; }
+  .form-row { display: grid; gap: 16px; margin-bottom: 20px; }
+  .form-row.cols-3 { grid-template-columns: 2fr 1fr 1fr; }
+  .form-row.cols-2 { grid-template-columns: 1fr 1fr; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--muted); }
+  .field input, .field select { background: var(--input-bg); border: 1.5px solid var(--line); border-radius: 6px; padding: 10px 12px; font-size: 14px; outline: none; width: 100%; }
+  
+  .btn { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 800; text-transform: uppercase; padding: 12px 20px; border-radius: 6px; border: none; cursor: pointer; transition: 0.2s; width: 100%; }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-danger { background: var(--danger); color: #fff; }
+  
+  .btn-balanca {
+    background: var(--accent2); color: #fff; border: none; border-radius: 6px;
+    padding: 10px 10px; font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+    font-weight: 800; cursor: pointer; white-space: nowrap; height: 100%;
+    display: flex; align-items: center; gap: 5px; transition: background 0.2s;
+  }
+  .btn-balanca.conectada { background: var(--success); }
+  .btn-balanca.lendo { background: var(--warn); animation: balanca-pulse 0.6s infinite alternate; }
+  .btn-balanca.erro  { background: var(--danger); }
+  @keyframes balanca-pulse { from { opacity: 1; } to { opacity: 0.6; } }
+  .balanca-dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.5); flex-shrink: 0; }
+  .btn-balanca.conectada .balanca-dot { background: #7effc4; }
+  .btn-balanca.lendo .balanca-dot { background: #fff; }
+
+  .btn-limpar-tara { background: none; color: #ff6b6b; font-size: 9px; font-weight: 700; padding: 0; margin-left: 5px; border: none; cursor: pointer; text-decoration: underline; vertical-align: middle; }
+  .btn-reset-hist { background: #ff4d4d; color: #fff; border:none; padding: 2px 6px; border-radius: 4px; font-size: 9px; cursor: pointer; margin-left: 8px; vertical-align: middle; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); margin-top: 10px; }
+  thead { background: var(--primary); }
+  thead th { color: #fff; font-size: 10px; text-transform: uppercase; padding: 12px; text-align: left; }
+  tbody td { padding: 11px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .tag-editado { color: var(--warn); font-size: 8px; font-weight: 800; display: block; margin-top: 2px; }
+
+  /* LINHA TOTALIZADOR */
+  .tfoot-total td { background: #1a2744; color: #fff; font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 12px; padding: 12px 14px; border: none; vertical-align: middle; }
+  .tfoot-total td.total-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: rgba(255,255,255,0.6); }
+  .tfoot-total td.total-val { color: #4fd1a5; font-size: 13px; }
+
+  /* PAINEL RESUMO ORIGEM/CULTIVAR */
+  .resumo-wrap { margin-top: 28px; }
+  .resumo-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .resumo-header h4 { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px; }
+  .resumo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .resumo-card {
+    background: var(--card);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 16px 18px;
+    border-left: 4px solid var(--accent2);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: transform 0.15s;
+  }
+  .resumo-card:hover { transform: translateY(-2px); }
+  .resumo-card .rc-titulo {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--primary);
+    line-height: 1.3;
+  }
+  .resumo-card .rc-subtitulo {
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .resumo-card .rc-peso {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--success);
+    margin-top: 4px;
+  }
+  .resumo-card .rc-meta {
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    gap: 10px;
+    margin-top: 2px;
+  }
+  .resumo-card .rc-meta span { display: flex; align-items: center; gap: 3px; }
+  .resumo-vazio { color: var(--muted); font-size: 13px; text-align: center; padding: 20px; }
+
+  /* LINHA SIMPLES DE RESUMO */
+  .resumo-linha-simples {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px 15px;
+    margin-top: 15px;
+    display: flex;
+    gap: 30px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--primary);
+  }
+  .resumo-linha-simples strong { color: var(--accent); }
+
+  /* cores variadas por índice */
+  .resumo-card.c0 { border-left-color: #4a90d9; }
+  .resumo-card.c1 { border-left-color: #1a7a4a; }
+  .resumo-card.c2 { border-left-color: #e67e22; }
+  .resumo-card.c3 { border-left-color: #8e44ad; }
+  .resumo-card.c4 { border-left-color: #c0392b; }
+  .resumo-card.c5 { border-left-color: #16a085; }
+  .resumo-card.c6 { border-left-color: #d35400; }
+  .resumo-card.c7 { border-left-color: #2980b9; }
+
+  #modal-edit { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; }
+  .modal-content { background: #fff; padding: 25px; border-radius: 10px; width: 350px; text-align: center; }
+
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--primary); color: #fff; padding: 12px 22px; border-radius: 8px; font-size: 13px; transform: translateY(80px); opacity: 0; transition: all .3s; z-index: 999; }
+  .toast.show { transform: translateY(0); opacity: 1; }
+
+  @media print {
+    @page { margin: 0; size: auto; }
+    header, .tabs, .form-card, #clock, .toast, #tab-config, #tab-historico, #modal-edit, #modal-confirma-reset { display: none !important; }
+    #tab-nova { display: block !important; }
+    .preview-wrap { padding: 0 !important; margin-top: -12mm !important; }
+    .card-print { display: block !important; width: 78mm !important; border: 2px solid #000 !important; }
+  }
+
+  /* COMBO DROPDOWN (Origem / Cultivar) */
+  .combo-wrap { position: relative; display: flex; }
+  .combo-wrap input {
+    flex: 1; border-radius: 6px 0 0 6px !important;
+    border-right: none !important;
+  }
+  .combo-arrow {
+    background: var(--accent2); color: #fff; border: 1.5px solid var(--accent2);
+    border-radius: 0 6px 6px 0; padding: 0 11px; font-size: 11px;
+    cursor: pointer; flex-shrink: 0; transition: background 0.15s;
+  }
+  .combo-arrow:hover { background: var(--accent); border-color: var(--accent); }
+  .combo-list {
+    display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 200;
+    background: #fff; border: 1.5px solid var(--accent2); border-top: none;
+    border-radius: 0 0 8px 8px; max-height: 220px; overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(26,39,68,0.15);
+  }
+  .combo-list.open { display: block; }
+  .combo-item {
+    padding: 9px 13px; font-size: 13px; cursor: pointer;
+    font-family: 'IBM Plex Mono', monospace; text-transform: uppercase;
+    border-bottom: 1px solid var(--line); transition: background 0.1s;
+  }
+  .combo-item:last-child { border-bottom: none; }
+  .combo-item:hover, .combo-item.selected { background: var(--accent2); color: #fff; }
+  .combo-empty { padding: 10px 13px; font-size: 12px; color: var(--muted); font-style: italic; }
+
+  /* Inputs editáveis na tabela de frota (tara, origem, cultivar) */
+  #tbl-frota input[type="text"],
+  #tbl-frota input[type="number"] {
+    background: var(--input-bg);
+    border: 1.5px solid var(--line);
+    border-radius: 5px;
+    padding: 5px 7px;
+    font-size: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  #tbl-frota input:focus {
+    border-color: var(--accent2);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚙ Sistema de Descargas</h1>
+  <span id="clock" style="font-family:'IBM Plex Mono'; font-size:12px"></span>
+</header>
+
+<div id="modal-confirma-reset" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center;">
+  <div class="modal-content" style="width:380px;">
+    <div style="font-size:36px; margin-bottom:12px;">🗑️</div>
+    <h3 style="margin-bottom:10px; color:var(--danger);">LIMPAR TUDO?</h3>
+    <p style="font-size:13px; color:var(--muted); margin-bottom:20px; line-height:1.6;">
+      Essa ação vai <strong>apagar todo o histórico</strong> de descargas e <strong>zerar o contador</strong> para #0001.<br>
+      <span style="color:var(--danger); font-weight:700;">Não é possível desfazer.</span>
+    </p>
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-danger" onclick="confirmarReset()">🗑 SIM, LIMPAR TUDO</button>
+      <button class="btn" style="background:#ccc;" onclick="fecharModalReset()">CANCELAR</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-edit">
+  <div class="modal-content">
+    <h3 style="margin-bottom:15px;">Editar Ordem</h3>
+    <div class="field" style="text-align: left; margin-bottom:15px">
+        <label>Nova Placa</label>
+        <select id="edit-placa-select"></select>
+    </div>
+    <div class="field" style="text-align: left; margin-bottom:15px">
+        <label>Produto</label>
+        <select id="edit-produto-select"></select>
+    </div>
+    <div class="field" style="text-align: left; margin-bottom:15px">
+        <label>Origem</label>
+        <input type="text" id="edit-origem-input" style="text-transform:uppercase">
+    </div>
+    <div class="field" style="text-align: left; margin-bottom:15px">
+        <label>Cultivar</label>
+        <input type="text" id="edit-cultivar-input" style="text-transform:uppercase">
+    </div>
+    <div class="field" style="text-align: left; margin-bottom:15px">
+        <label>Peso Bruto (kg)</label>
+        <input type="number" id="edit-bruto-input" step="1">
+    </div>
+    <div class="field" style="text-align: left; margin-bottom:20px">
+        <label>Umidade (%)</label>
+        <input type="number" id="edit-um-input" step="0.1">
+    </div>
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-primary" onclick="confirmarEdicao()">SALVAR</button>
+      <button class="btn" style="background:#ccc;" onclick="fecharModal()">CANCELAR</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: confirmar exclusão de ordem -->
+<div id="modal-confirma-excluir-ordem" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center;">
+  <div class="modal-content" style="width:360px;">
+    <div style="font-size:32px; margin-bottom:10px;">🗂️</div>
+    <h3 style="margin-bottom:8px; color:var(--danger);">EXCLUIR REGISTRO?</h3>
+    <p style="font-size:13px; color:var(--muted); margin-bottom:20px; line-height:1.6;">
+      O registro será removido e a sequência de números será corrigida.<br>
+      <span style="color:var(--danger); font-weight:700;">Não é possível desfazer.</span>
+    </p>
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-danger" onclick="_confirmarExcluirOrdem()">✕ SIM, EXCLUIR</button>
+      <button class="btn" style="background:#ccc;" onclick="_fecharModalExcluirOrdem()">CANCELAR</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: confirmar exclusão de veículo -->
+<div id="modal-confirma-excluir-frota" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center;">
+  <div class="modal-content" style="width:360px;">
+    <div style="font-size:32px; margin-bottom:10px;">🚛</div>
+    <h3 style="margin-bottom:8px; color:var(--danger);">EXCLUIR VEÍCULO?</h3>
+    <p id="modal-excluir-frota-msg" style="font-size:13px; color:var(--muted); margin-bottom:20px; line-height:1.6;"></p>
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-danger" onclick="_confirmarExcluirFrota()">✕ SIM, EXCLUIR</button>
+      <button class="btn" style="background:#ccc;" onclick="_fecharModalExcluirFrota()">CANCELAR</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: confirmar limpeza de taras -->
+<div id="modal-confirma-limpar-taras" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center;">
+  <div class="modal-content" style="width:360px;">
+    <div style="font-size:32px; margin-bottom:10px;">⚖️</div>
+    <h3 style="margin-bottom:8px; color:var(--warn);">LIMPAR TODAS AS TARAS?</h3>
+    <p style="font-size:13px; color:var(--muted); margin-bottom:20px; line-height:1.6;">
+      Os valores de tara de todos os veículos serão apagados.
+    </p>
+    <div style="display:flex; gap:10px;">
+      <button class="btn" style="background:var(--warn); color:#fff;" onclick="_confirmarLimparTaras()">⚖ SIM, LIMPAR</button>
+      <button class="btn" style="background:#ccc;" onclick="_fecharModalLimparTaras()">CANCELAR</button>
+    </div>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" id="btn-nova" onclick="showTab('nova')">Nova Ordem</button>
+  <button class="tab-btn" id="btn-historico" onclick="showTab('historico')">Histórico</button>
+  <button class="tab-btn" id="btn-config" onclick="showTab('config')">Configurações</button>
+</div>
+
+<div class="container">
+  <div id="tab-nova" class="section active">
+    <div class="preview-wrap" id="print-area">
+      <div class="card-print" id="main-ticket">
+        <div id="pv-obs-wrap" style="display:none; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:18px; font-weight:800; color:#000; margin-bottom:10px; padding:8px 4px; border:2px solid #000060; border-radius:3px; letter-spacing:1px; background:#f0f4ff;">
+          <span id="pv-obs"></span>
+        </div>
+        <div class="card-print-title">ORDEM DE DESCARGA N° <span id="pv-num">0001</span></div>
+        <div class="card-line">
+          <span class="card-lbl">DATA</span> <span class="card-val" id="pv-dia"></span>
+          <span class="card-sep">/</span> <span class="card-val" id="pv-mes"></span>
+          <span class="card-sep">/</span> <span class="card-val" id="pv-ano"></span>
+          <span class="card-lbl" style="margin-left:8px">HORA</span> <span class="card-val" id="pv-hh"></span>
+          <span class="card-sep">:</span> <span class="card-val" id="pv-mm"></span>
+        </div>
+        <div class="card-line">
+          <span class="card-lbl">PRODUTO</span> <span class="card-val" id="pv-produto"></span>
+          <span class="card-lbl" style="margin-left:8px">UMID%</span> <span class="card-val destaque-valor" id="pv-um"></span>
+        </div>
+        <div class="card-line">
+          <span class="card-lbl">PLACA</span> 
+          <div class="card-val-placa-group">
+             <span class="destaque-valor" id="pv-placa1"></span>
+             <span id="pv-placa-sep" style="color:#000; font-weight:800; padding:0 2px; display:none;">-</span>
+             <span class="destaque-valor" id="pv-placa2"></span>
+          </div>
+        </div>
+        <div class="card-line">
+          <span class="card-lbl">BRUTO</span> <span class="card-val" id="pv-peso"></span>
+          <span class="card-lbl" style="margin-left:8px">TARA</span> <span class="card-val" id="pv-tara"></span>
+        </div>
+        <div class="card-line">
+          <span class="card-lbl">LÍQUIDO</span> <span class="card-val destaque-valor" id="pv-liquido"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-card">
+      <div class="form-header">
+        <h2>DADOS DA DESCARGA</h2>
+        <div id="badge-num" style="font-size:22px; font-weight:700; color:var(--accent2)">#0001</div>
+      </div>
+      <div class="form-body">
+        <div class="form-row cols-3">
+          <div class="field"><label>Data</label><input type="date" id="f-data" oninput="sync()"></div>
+          <div class="field"><label>Hora</label><input type="time" id="f-hora" oninput="sync()"></div>
+          <div class="field"><label>Produto</label><select id="f-produto" onchange="sync()"></select></div>
+        </div>
+        <div class="form-row cols-3">
+          <div class="field"><label>Umidade (%)</label><input type="number" id="f-um" step="0.1" oninput="sync()"></div>
+          <div class="field">
+            <label>Peso Bruto (kg)</label>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <input type="number" id="f-peso" oninput="sync()" style="flex:1;">
+              <button type="button" id="btn-balanca" onclick="capturarBalanca()" title="Capturar peso da balança (F8)" class="btn-balanca">
+                <span class="balanca-dot"></span><span id="btn-balanca-label">⚖ F8</span>
+              </button>
+            </div>
+          </div>
+          <div class="field"><label>Placa</label><select id="f-placa" onchange="onPlacaChange()"></select></div>
+        </div>
+        <div class="form-row cols-2">
+          <div class="field">
+            <label>Origem</label>
+            <div class="combo-wrap" id="combo-wrap-origem">
+              <input type="text" id="f-origem" style="text-transform:uppercase" autocomplete="off" oninput="sync(); _comboFilter('origem')" onfocus="_comboFocus('origem')" onblur="_comboBlur('origem')" placeholder="Digite ou selecione...">
+              <button type="button" class="combo-arrow" onmousedown="event.preventDefault(); _comboToggle('origem')" tabindex="-1">&#9660;</button>
+              <div class="combo-list" id="combo-list-origem"></div>
+            </div>
+          </div>
+          <div class="field">
+            <label>Cultivar</label>
+            <div class="combo-wrap" id="combo-wrap-cultivar">
+              <input type="text" id="f-cultivar" style="text-transform:uppercase" autocomplete="off" oninput="if(document.getElementById('f-semente').checked) onSementeChange(); sync(); _comboFilter('cultivar')" onfocus="_comboFocus('cultivar')" onblur="_comboBlur('cultivar')" placeholder="Digite ou selecione...">
+              <button type="button" class="combo-arrow" onmousedown="event.preventDefault(); _comboToggle('cultivar')" tabindex="-1">&#9660;</button>
+              <div class="combo-list" id="combo-list-cultivar"></div>
+            </div>
+          </div>
+        </div>
+        <div class="form-row cols-2" style="margin-bottom:20px;">
+          <div class="field"><label>Motorista</label><input type="text" id="f-motorista" readonly style="background:#eef2f8;"></div>
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px;">
+              OBS
+              <label style="display:flex; align-items:center; gap:4px; font-size:10px; font-weight:700; color:var(--accent2); cursor:pointer; text-transform:uppercase; letter-spacing:0.3px;">
+                <input type="checkbox" id="f-semente" onchange="onSementeChange()" style="width:14px; height:14px; cursor:pointer; accent-color:var(--accent);">
+                SEMENTE
+              </label>
+            </label>
+            <input type="text" id="f-obs" style="text-transform:uppercase" oninput="sync()" placeholder="Observação...">
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-imprimir-vias" onclick="salvarEImprimir()">🖨 IMPRIMIR VIAS (F10)</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-historico" class="section">
+    <!-- GRÁFICO DE FLUXO HORÁRIO -->
+    <div id="grafico-fluxo-wrap" style="background:#fff; border-radius:12px; box-shadow:0 2px 16px rgba(26,39,68,0.10); padding:18px 22px 14px; margin-bottom:22px; display:none;">
+
+      <!-- Cabeçalho do gráfico -->
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:10px; gap:12px; flex-wrap:wrap;">
+        <div>
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:700; text-transform:uppercase; color:var(--primary); letter-spacing:0.5px;">⏱ Fluxo de Entradas por Horário</div>
+          <div id="grafico-subtitulo" style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--muted); margin-top:3px;"></div>
+        </div>
+        <!-- Controles: filtro de origem + toggle -->
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <select id="grafico-filtro-origem" onchange="renderGrafico()"
+            style="font-size:11px; padding:5px 8px; border:1.5px solid var(--line); border-radius:6px; background:var(--input-bg); color:var(--text); font-family:'IBM Plex Sans',sans-serif; cursor:pointer;">
+            <option value="">Todos os Talhões</option>
+          </select>
+          <div style="display:flex; border:1.5px solid var(--line); border-radius:6px; overflow:hidden; font-size:11px; font-family:'IBM Plex Mono',monospace; font-weight:700;">
+            <button id="btn-modo-cargas" onclick="setModoGrafico('cargas')"
+              style="padding:5px 10px; border:none; cursor:pointer; background:var(--primary); color:#fff;">🚛 CARGAS</button>
+            <button id="btn-modo-peso" onclick="setModoGrafico('peso')"
+              style="padding:5px 10px; border:none; cursor:pointer; background:#fff; color:var(--muted);">⚖ PESO (kg)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tooltip hover -->
+      <div id="grafico-tooltip" style="display:none; position:fixed; background:var(--primary); color:#fff; padding:6px 10px; border-radius:6px; font-family:'IBM Plex Mono',monospace; font-size:11px; pointer-events:none; z-index:500; white-space:nowrap; box-shadow:0 4px 12px rgba(0,0,0,0.25);"></div>
+
+      <!-- Área do gráfico com label Y vertical -->
+      <div style="display:flex; gap:0; align-items:stretch;">
+        <div id="grafico-label-y" style="writing-mode:vertical-rl; transform:rotate(180deg); font-size:9px; font-family:'IBM Plex Sans',sans-serif; color:var(--muted); text-align:center; padding-right:4px; letter-spacing:0.5px; text-transform:uppercase; min-width:14px;">Nº de Cargas</div>
+        <div style="flex:1; position:relative;">
+          <canvas id="grafico-fluxo" style="width:100%; display:block; cursor:crosshair;"></canvas>
+        </div>
+      </div>
+
+      <!-- Label eixo X -->
+      <div style="text-align:center; font-size:9px; color:var(--muted); font-family:'IBM Plex Sans',sans-serif; text-transform:uppercase; letter-spacing:0.5px; margin-top:2px; padding-left:18px;">Hora de Chegada</div>
+
+      <!-- Legenda -->
+      <div style="display:flex; gap:16px; margin-top:10px; font-size:10px; color:var(--muted); font-family:'IBM Plex Sans',sans-serif; flex-wrap:wrap;">
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#e67e22;display:inline-block;"></span>Pico do dia</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#2952a3;display:inline-block;"></span>Com entradas</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#e8ecf3;display:inline-block;"></span>Sem entradas</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:2px;border-radius:1px;background:#1a7a4a;display:inline-block;"></span>Média/hora</span>
+      </div>
+    </div>
+
+    <div class="resumo-wrap">
+      <div class="resumo-header">
+        <h4>📦 Resumo por Origem / Cultivar</h4>
+
+      </div>
+      <div class="resumo-grid" id="resumo-grid"></div>
+
+      <!-- Título + linha de totais juntos -->
+      <div style="margin-top:20px; margin-bottom:4px;">
+        <h3 style="font-size:16px; font-weight:700; color:var(--primary); margin-bottom:8px;">Histórico de Descargas</h3>
+        <div id="resumo-linha-simples" class="resumo-linha-simples" style="margin-top:0;"></div>
+      </div>
+
+      <!-- BUSCA + EXPORTAR -->
+      <div style="margin-top:10px; display:flex; align-items:center; gap:10px;">
+        <div style="display:flex; align-items:center; gap:6px; flex:1; background:var(--input-bg); border:1.5px solid var(--line); border-radius:6px; padding:0 10px;">
+          <span style="color:var(--muted); font-size:14px;">🔍</span>
+          <input type="text" id="hist-busca" placeholder="Buscar por Placa ou Motorista..." oninput="renderHistorico()"
+            style="flex:1; padding:9px 0; border:none; font-size:13px; background:transparent; outline:none; font-family:'IBM Plex Sans',sans-serif;">
+          <button onclick="document.getElementById('hist-busca').value=''; renderHistorico();" style="background:none; border:none; color:var(--muted); font-size:16px; cursor:pointer; line-height:1; padding:0;" title="Limpar busca">✕</button>
+        </div>
+        <button class="btn" style="white-space:nowrap; width:auto; font-size:12px; background:#fff; border:1.5px solid var(--primary); color:var(--primary); padding:9px 14px;" onclick="exportarExcel()">📊 Exportar Excel</button>
+      </div>
+    </div>
+
+    <table id="tbl-historico" style="margin-top:28px;">
+      <thead>
+        <tr>
+          <th>Nº</th><th>Data/Hora</th><th>Placa</th><th>Produto</th><th>Bruto</th><th>Tara</th><th>Líquido</th><th>Um%</th>
+          <th style="white-space:nowrap">AÇÕES <button class="btn-reset-hist" onclick="resetarSistemaCompleto()" title="Limpar Tudo e Zerar Sequência">🗑 LIMPAR TUDO</button></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+      <tfoot id="tfoot-total"></tfoot>
+    </table>
+
+  </div>
+
+  <div id="tab-config" class="section">
+    <!-- PRODUTOS: card compacto em linha separada -->
+    <div style="max-width:420px; margin-bottom:24px;">
+      <div class="form-card">
+        <div class="form-header"><h2>PRODUTOS</h2></div>
+        <div class="form-body">
+          <input type="text" id="cfg-prod-nome" placeholder="NOME DO PRODUTO" style="width:100%; padding:10px; margin-bottom:10px; border:1.5px solid var(--line); border-radius:6px; text-transform:uppercase">
+          <button class="btn btn-primary" onclick="salvarProduto()">+ ADICIONAR</button>
+          <table id="tbl-produtos"><thead><tr><th>Produto</th><th></th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </div>
+    <!-- FROTA: card em largura total para acomodar todas as colunas -->
+    <div>
+      <div class="form-card">
+        <div class="form-header"><h2>FROTA</h2></div>
+        <div class="form-body">
+          <div class="form-row cols-2" style="margin-bottom:0">
+            <div class="field"><label>Placa</label><input type="text" id="cfg-placa" style="text-transform:uppercase"></div>
+            <div class="field"><label>Motorista</label><input type="text" id="cfg-motorista" style="text-transform:uppercase"></div>
+          </div>
+          <div class="form-row cols-2" style="margin-top:10px; margin-bottom:0">
+            <div class="field"><label>Origem (padrão)</label><input type="text" id="cfg-origem" style="text-transform:uppercase" placeholder="Opcional..."></div>
+            <div class="field"><label>Cultivar (padrão)</label><input type="text" id="cfg-cultivar" style="text-transform:uppercase" placeholder="Opcional..."></div>
+          </div>
+          <button class="btn btn-primary" style="margin-top:10px" onclick="salvarFrota()">+ SALVAR VEÍCULO</button>
+          <div style="overflow-x:auto;"><table id="tbl-frota" style="min-width:600px;">
+            <thead>
+              <tr>
+                <th style="width:90px">Placa</th>
+                <th style="text-align:center; width:120px">TARA (kg) <button class="btn-limpar-tara" onclick="limparTodasTaras()">[LIMPAR]</button></th>
+                <th style="width:130px">Motorista</th>
+                <th>Origem</th>
+                <th>Cultivar</th>
+                <th style="width:44px"></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── SISTEMA DE CHAVES COM MIGRAÇÃO AUTOMÁTICA ───────────────────────────────
+// A chave ativa é sempre a mais recente encontrada no localStorage.
+// Se existirem dados em versões antigas (v23_, v24_, v25_...), eles são migrados
+// automaticamente para a chave atual SEM perder nenhum dado.
+const STORAGE_KEYS = ['frota','ordens','produtos','contador'];
+const VERSOES_CONHECIDAS = ['v23_','v24_','v25_','v26_'];
+const VERSAO_ATUAL = 'v26_';
+
+(function migrarAutomatico() {
+  STORAGE_KEYS.forEach(k => {
+    // Já tem dados na versão atual? Nada a fazer.
+    if (localStorage.getItem(VERSAO_ATUAL + k) !== null) return;
+
+    // Procura da versão mais recente para a mais antiga
+    for (let i = VERSOES_CONHECIDAS.length - 2; i >= 0; i--) {
+      const prefixo = VERSOES_CONHECIDAS[i];
+      const valor = localStorage.getItem(prefixo + k);
+      if (valor !== null) {
+        localStorage.setItem(VERSAO_ATUAL + k, valor);
+        // Mantém o original por segurança (não remove)
+        console.info(`[Migração] "${prefixo}${k}" → "${VERSAO_ATUAL}${k}"`);
+        break;
+      }
+    }
+  });
+})();
+
+function _lsGet(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return fallback;
+    return JSON.parse(raw) ?? fallback;
+  } catch(e) {
+    console.warn('[Sistema] Dado corrompido em "' + key + '", usando valor padrão.', e);
+    return fallback;
+  }
+}
+
+// Todas as gravações usam a versão atual automaticamente
+function _lsSet(sufixo, valor) {
+  localStorage.setItem(VERSAO_ATUAL + sufixo, typeof valor === 'string' ? valor : JSON.stringify(valor));
+}
+
+let db_frota    = _lsGet(VERSAO_ATUAL + 'frota',    {});
+let db_ordens   = _lsGet(VERSAO_ATUAL + 'ordens',   []);
+let db_produtos = _lsGet(VERSAO_ATUAL + 'produtos', ['SOJA', 'MILHO']);
+let contador    = parseInt(localStorage.getItem(VERSAO_ATUAL + 'contador')) || 1;
+let currentEditId = null;
+
+function fmt(num) { if (!num || isNaN(num)) return ""; return Number(num).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+function fmtInt(num) { return Number(num).toLocaleString('pt-BR', {minimumFractionDigits: 0, maximumFractionDigits: 0}); }
+
+function showTab(tab) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  document.getElementById('btn-' + tab).classList.add('active');
+  if(tab === 'config') { renderProdutos(); renderFrota(); }
+  if(tab === 'historico') renderHistorico();
+}
+
+function _placaLabel(p) {
+  var placa = p.padEnd(8, '\u00A0');
+  var mot   = db_frota[p] && db_frota[p].motorista ? db_frota[p].motorista : '';
+  return mot ? placa + '\u00A0\u2014\u00A0' + mot : p;
+}
+
+// ─── COMBO DROPDOWN (Origem / Cultivar) ──────────────────────────────────────
+const _comboData = { origem: [], cultivar: [] };
+
+function _comboSetData(id, items) {
+  _comboData[id] = items;
+}
+
+function _comboRender(id, filter) {
+  const list  = document.getElementById('combo-list-' + id);
+  const input = document.getElementById('f-' + id);
+  const q     = (filter !== undefined ? filter : input.value).toUpperCase().trim();
+  const items = _comboData[id].filter(v => !q || v.toUpperCase().includes(q));
+
+  if (items.length === 0) {
+    list.innerHTML = '<div class="combo-empty">Nenhum registro encontrado</div>';
+  } else {
+    list.innerHTML = items.map(v =>
+      `<div class="combo-item${v === input.value.toUpperCase() ? ' selected' : ''}"
+            onmousedown="event.preventDefault(); _comboSelect('${id}', '${v.replace(/'/g,"\\'")}')">
+        ${v}
+      </div>`
+    ).join('');
+  }
+}
+
+function _comboSelect(id, value) {
+  const input = document.getElementById('f-' + id);
+  input.value = value;
+  _comboClose(id);
+  if (id === 'cultivar' && document.getElementById('f-semente').checked) onSementeChange();
+  sync();
+}
+
+function _comboOpen(id) {
+  _comboRender(id, '');
+  document.getElementById('combo-list-' + id).classList.add('open');
+  document.getElementById('combo-wrap-' + id).querySelector('input').value = '';
+}
+
+function _comboClose(id) {
+  document.getElementById('combo-list-' + id).classList.remove('open');
+}
+
+function _comboToggle(id) {
+  const list = document.getElementById('combo-list-' + id);
+  if (list.classList.contains('open')) {
+    _comboClose(id);
+  } else {
+    _comboOpen(id);
+    document.getElementById('f-' + id).focus();
+  }
+}
+
+function _comboFilter(id) {
+  const list = document.getElementById('combo-list-' + id);
+  if (_comboData[id].length > 0) {
+    list.classList.add('open');
+    _comboRender(id);
+  }
+}
+
+function _comboFocus(id) {
+  if (_comboData[id].length > 0) {
+    _comboRender(id, '');
+    document.getElementById('combo-list-' + id).classList.add('open');
+  }
+}
+
+function _comboBlur(id) {
+  setTimeout(() => _comboClose(id), 180);
+}
+
+function updateSelects() {
+  const sp = document.getElementById('f-placa');
+  const currP = sp.value;
+  sp.innerHTML = '<option value="">Selecione...</option>';
+  Object.keys(db_frota).sort().forEach(p => {
+    sp.innerHTML += `<option value="${p}" ${p === currP ? 'selected' : ''}>${_placaLabel(p)}</option>`;
+  });
+  sp.style.fontFamily = "'IBM Plex Mono', monospace";
+  sp.style.fontSize   = '13px';
+
+  const sr = document.getElementById('f-produto');
+  const currPr = sr.value;
+  sr.innerHTML = '<option value="">Selecione...</option>';
+  db_produtos.sort().forEach(p => sr.innerHTML += `<option value="${p}" ${p === currPr ? 'selected' : ''}>${p}</option>`);
+
+  const origens   = [...new Set(db_ordens.map(o => o.origem).filter(Boolean))].sort();
+  const cultivares = [...new Set(db_ordens.map(o => o.cultivar).filter(Boolean))].sort();
+  _comboSetData('origem',   origens);
+  _comboSetData('cultivar', cultivares);
+}
+
+function sync(ext = null) {
+  const d = (ext ? ext.data : document.getElementById('f-data').value).split('-');
+  const h = (ext ? ext.hora : document.getElementById('f-hora').value).split(':');
+  const placa = ext ? ext.placa : document.getElementById('f-placa').value;
+  const bruto = parseFloat(ext ? ext.bruto : document.getElementById('f-peso').value) || 0;
+  const tara = (db_frota[placa]) ? parseFloat(db_frota[placa].tara) || 0 : 0;
+
+  if(d.length === 3) { document.getElementById('pv-dia').innerText = d[2]; document.getElementById('pv-mes').innerText = d[1]; document.getElementById('pv-ano').innerText = d[0]; }
+  if(h.length === 2) { document.getElementById('pv-hh').innerText = h[0]; document.getElementById('pv-mm').innerText = h[1]; }
+  
+  document.getElementById('pv-num').innerText = String(ext ? ext.num : contador).padStart(4,'0');
+  document.getElementById('pv-produto').innerText = ext ? ext.produto : document.getElementById('f-produto').value;
+  document.getElementById('pv-um').innerText = (ext ? ext.umidade : document.getElementById('f-um').value) ? (ext ? ext.umidade : document.getElementById('f-um').value) + '%' : "";
+  document.getElementById('pv-placa1').innerText = placa.substring(0,3);
+  document.getElementById('pv-placa2').innerText = placa.substring(3);
+  document.getElementById('pv-placa-sep').style.display = placa ? "inline" : "none";
+  document.getElementById('pv-peso').innerText = fmt(bruto);
+  document.getElementById('pv-tara').innerText = fmt(ext ? ext.tara : tara);
+  document.getElementById('pv-liquido').innerText = (bruto > 0) ? fmt(bruto - (ext ? ext.tara : tara)) + " kg" : "";
+
+  const obsVal = ext ? (ext.obs || '') : document.getElementById('f-obs').value.trim();
+  const obsWrap = document.getElementById('pv-obs-wrap');
+  document.getElementById('pv-obs').innerText = obsVal;
+  obsWrap.style.display = obsVal ? 'block' : 'none';
+}
+
+function onPlacaChange() {
+  const p = document.getElementById('f-placa').value;
+  const veiculo = db_frota[p] || {};
+  document.getElementById('f-motorista').value = veiculo.motorista || '';
+  // Preenche Origem e Cultivar só se a frota tiver valor cadastrado
+  if (veiculo.origem)   document.getElementById('f-origem').value   = veiculo.origem;
+  else                  document.getElementById('f-origem').value   = '';
+  if (veiculo.cultivar) document.getElementById('f-cultivar').value = veiculo.cultivar;
+  else                  document.getElementById('f-cultivar').value = '';
+  const n = new Date();
+  document.getElementById('f-hora').value = String(n.getHours()).padStart(2,'0') + ':' + String(n.getMinutes()).padStart(2,'0');
+  sync();
+}
+
+function onSementeChange() {
+  const checked  = document.getElementById('f-semente').checked;
+  const cultivar = document.getElementById('f-cultivar').value.trim().toUpperCase();
+  const obsInput = document.getElementById('f-obs');
+  if (checked) {
+    obsInput.value = cultivar ? 'SEMENTE: ' + cultivar : 'SEMENTE';
+    obsInput.readOnly = true;
+    obsInput.style.background = '#eef2f8';
+  } else {
+    obsInput.value = '';
+    obsInput.readOnly = false;
+    obsInput.style.background = '';
+  }
+  sync();
+}
+
+function salvarEImprimir() {
+  const p = document.getElementById('f-placa').value;
+  if(!p) return showToast("Selecione a Placa!");
+  const bruto = parseFloat(document.getElementById('f-peso').value) || 0;
+  if(bruto <= 0) return showToast("Informe o Peso Bruto!");
+  const tara = (db_frota[p]) ? parseFloat(db_frota[p].tara) || 0 : 0;
+
+  const o = {
+    id: Date.now(), num: contador, data: document.getElementById('f-data').value, hora: document.getElementById('f-hora').value,
+    placa: p, bruto: bruto, tara: tara, liquido: bruto - tara,
+    produto: document.getElementById('f-produto').value, umidade: document.getElementById('f-um').value,
+    motorista: document.getElementById('f-motorista').value,
+    origem: document.getElementById('f-origem').value.toUpperCase().trim(),
+    cultivar: document.getElementById('f-cultivar').value.toUpperCase().trim(),
+    obs: document.getElementById('f-obs').value.toUpperCase().trim(),
+    editado: false
+  };
+
+  db_ordens.unshift(o);
+  _lsSet('ordens', db_ordens);
+
+  window.print();
+  setTimeout(() => {
+    window.print();
+    setTimeout(() => {
+      contador++;
+      _lsSet('contador', String(contador));
+      init();
+      showToast("Sucesso!");
+    }, 500);
+  }, 500);
+}
+
+function imprimirSegundaVia(id) {
+  const o = db_ordens.find(x => x.id === id); if(!o) return;
+  sync(o);
+  setTimeout(() => {
+    window.print();
+    setTimeout(() => {
+      sync();
+      showToast("2ª Via Impressa!");
+    }, 1500);
+  }, 200);
+}
+
+function renderHistorico() {
+  const busca = (document.getElementById('hist-busca')?.value || '').trim().toUpperCase();
+  const tbody = document.querySelector('#tbl-historico tbody');
+
+  // Filtragem por placa ou motorista
+  const filtrado = busca
+    ? db_ordens.filter(o =>
+        (o.placa || '').toUpperCase().includes(busca) ||
+        (o.motorista || '').toUpperCase().includes(busca)
+      )
+    : db_ordens;
+
+  const exibidos = filtrado.slice(0, 100);
+  const ocultos  = filtrado.length - exibidos.length;
+  tbody.innerHTML = exibidos.map((o, idx) => {
+    // posição real no array total (para renumeração visual)
+    const posGlobal = db_ordens.indexOf(o);
+    const numVisual = db_ordens.length - posGlobal; // mais recente = maior número
+    return `<tr>
+    <td>#${String(o.num).padStart(4,'0')}${o.editado ? '<span class="tag-editado">EDITADO</span>' : ''}</td>
+    <td>${o.data.split('-').reverse().join('/')}<br><small>${o.hora}</small></td>
+    <td>${o.placa}</td>
+    <td>${o.produto || '-'}${(o.origem || o.cultivar) ? `<br><small style="color:var(--muted); font-size:10px">${[o.origem, o.cultivar].filter(Boolean).join(' · ')}</small>` : ''}</td>
+    <td>${fmt(o.bruto)}</td>
+    <td>${fmt(o.tara)}</td>
+    <td><strong>${fmt(o.liquido)} kg</strong></td>
+    <td>${o.umidade ? o.umidade + '%' : '-'}</td>
+    <td style="white-space:nowrap">
+      <button onclick="abrirEdicao(${o.id})" style="background:var(--accent2); color:white; border:none; padding:5px; border-radius:4px; font-size:9px; cursor:pointer">EDITAR</button>
+      <button onclick="imprimirSegundaVia(${o.id})" style="background:var(--success); color:white; border:none; padding:5px; border-radius:4px; font-size:9px; cursor:pointer">2ª VIA</button>
+      <button onclick="excluirOrdem(${o.id})" style="background:none; border:none; color:red; cursor:pointer; font-weight:bold; margin-left:5px">✕</button>
+    </td>
+  </tr>`; }).join('');
+
+  if (ocultos > 0) {
+    tbody.innerHTML += `<tr><td colspan="9" style="text-align:center; padding:10px; font-size:11px; color:var(--warn); font-family:'IBM Plex Mono',monospace; background:#fffbf5;">
+      ⚠️ Exibindo as 100 ordens mais recentes. Existem mais <strong>${ocultos}</strong> registro(s) oculto(s) — os totais abaixo consideram <strong>todos</strong> os registros.
+    </td></tr>`;
+  }
+
+  renderTotalizador();
+  renderResumo();
+  renderGrafico();
+}
+
+function renderTotalizador() {
+  const tfoot = document.getElementById('tfoot-total');
+  if (db_ordens.length === 0) { tfoot.innerHTML = ''; return; }
+
+  const totalBruto  = db_ordens.reduce((s, o) => s + (parseFloat(o.bruto)   || 0), 0);
+  const totalTara   = db_ordens.reduce((s, o) => s + (parseFloat(o.tara)    || 0), 0);
+  const totalLiq    = db_ordens.reduce((s, o) => s + (parseFloat(o.liquido) || 0), 0);
+  const totalOrdens = db_ordens.length;
+  const umVals      = db_ordens.map(o => parseFloat(o.umidade)).filter(v => !isNaN(v) && v > 0);
+  const mediaUm     = umVals.length > 0 ? (umVals.reduce((s, v) => s + v, 0) / umVals.length).toFixed(1) : null;
+
+  tfoot.innerHTML = `
+    <tr class="tfoot-total">
+      <td colspan="2" class="total-label">▶ TOTAL GERAL — ${totalOrdens} ordem${totalOrdens !== 1 ? 's' : ''}</td>
+      <td></td>
+      <td></td>
+      <td class="total-val">${fmt(totalBruto)} kg</td>
+      <td class="total-val">${fmt(totalTara)} kg</td>
+      <td class="total-val">${fmt(totalLiq)} kg</td>
+      <td class="total-val" style="vertical-align:middle">
+        ${mediaUm !== null ? `<span style="font-size:9px; color:rgba(255,255,255,0.5); display:block; line-height:1; margin-bottom:2px">UM% MÉDIA</span><span>${mediaUm}%</span>` : '-'}
+      </td>
+      <td></td>
+    </tr>`;
+}
+
+function renderResumo() {
+  const grid = document.getElementById('resumo-grid');
+  const badge = document.getElementById('resumo-total-geral');
+  const linhaSimples = document.getElementById('resumo-linha-simples');
+
+  if (db_ordens.length === 0) {
+    grid.innerHTML = '<p class="resumo-vazio">Nenhuma descarga registrada ainda.</p>';
+    if (badge) badge.innerText = '';
+    linhaSimples.style.display = 'none';
+    return;
+  }
+  
+  linhaSimples.style.display = 'flex';
+
+  const grupos = {};
+  let totalGeralLiq = 0;
+  let somaUmidade = 0;
+  let contUmidade = 0;
+
+  db_ordens.forEach(o => {
+    const liq = parseFloat(o.liquido) || 0;
+    totalGeralLiq += liq;
+    
+    const um = parseFloat(o.umidade);
+    if (!isNaN(um) && um > 0) {
+        somaUmidade += um;
+        contUmidade++;
+    }
+
+    const origem   = (o.origem   || '').trim();
+    const cultivar = (o.cultivar || '').trim();
+
+    let chave;
+    if (origem && cultivar)      chave = `${origem} · ${cultivar}`;
+    else if (origem)             chave = origem;
+    else if (cultivar)           chave = cultivar;
+    else                         chave = '(Sem identificação)';
+
+    if (!grupos[chave]) grupos[chave] = { liquido: 0, bruto: 0, ordens: 0, produto: o.produto || '', umSoma: 0, umCount: 0 };
+    grupos[chave].liquido += liq;
+    grupos[chave].bruto   += parseFloat(o.bruto)   || 0;
+    grupos[chave].ordens  += 1;
+    if (o.produto) grupos[chave].produto = o.produto;
+    if (!isNaN(um) && um > 0) { grupos[chave].umSoma += um; grupos[chave].umCount += 1; }
+  });
+
+  // Atualiza a linha simples solicitada
+  const mediaGeralUm = contUmidade > 0 ? (somaUmidade / contUmidade).toFixed(1) : "0.0";
+  linhaSimples.innerHTML = `
+    <span>CARGAS: <strong>${db_ordens.length}</strong></span>
+    <span>TOTAL LÍQ: <strong>${fmtInt(totalGeralLiq)} kg</strong></span>
+    <span>UMID. MÉDIA: <strong>${mediaGeralUm}%</strong></span>
+  `;
+
+  const lista = Object.entries(grupos).sort((a, b) => b[1].liquido - a[1].liquido);
+  
+
+  const CORES = ['c0','c1','c2','c3','c4','c5','c6','c7'];
+
+  grid.innerHTML = lista.map(([chave, v], i) => {
+    const pct = totalGeralLiq > 0 ? ((v.liquido / totalGeralLiq) * 100).toFixed(1) : 0;
+    const cor = CORES[i % CORES.length];
+    const partes = chave.split(' · ');
+    const titulo  = partes[0];
+    const sub     = partes.length > 1 ? partes.slice(1).join(' · ') : '';
+
+    return `
+    <div class="resumo-card ${cor}">
+      <div class="rc-titulo">${titulo}</div>
+      ${sub ? `<div class="rc-subtitulo">${sub}</div>` : ''}
+      <div class="rc-peso">${fmtInt(v.liquido)} kg</div>
+      <div class="rc-meta">
+        <span>📦 ${v.ordens} ${v.ordens !== 1 ? 'viagens' : 'viagem'}</span>
+        <span>📊 ${pct}%</span>
+        ${v.produto ? `<span>🌾 ${v.produto}</span>` : ''}
+      </div>
+      ${v.umCount > 0 ? (() => {
+        const mediaUm = (v.umSoma / v.umCount).toFixed(1);
+        const umColor = parseFloat(mediaUm) > 14 ? '#e67e22' : '#1a7a4a';
+        const umIcon  = parseFloat(mediaUm) > 14 ? '⚠️' : '✅';
+        return `<div style="margin-top:6px; padding-top:6px; border-top:1px solid var(--line); font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:700; color:${umColor}">${umIcon} Umid. média: ${mediaUm}%</div>`;
+      })() : ''}
+    </div>`;
+  }).join('');
+}
+
+function resetarSistemaCompleto() {
+    document.getElementById('modal-confirma-reset').style.display = 'flex';
+}
+function fecharModalReset() {
+    document.getElementById('modal-confirma-reset').style.display = 'none';
+}
+function confirmarReset() {
+    fecharModalReset();
+    db_ordens = [];
+    contador = 1;
+    _lsSet('ordens', db_ordens);
+    _lsSet('contador', String(contador));
+    // Limpa gráfico ANTES de renderHistorico para garantir limpeza imediata
+    renderGrafico();
+    renderHistorico();
+    init();
+    showToast("Sistema Resetado!");
+}
+
+function abrirEdicao(id) {
+  currentEditId = id; const o = db_ordens.find(x => x.id === id);
+  const sel = document.getElementById('edit-placa-select');
+  sel.innerHTML = '<option value="">Selecione...</option>';
+  Object.keys(db_frota).sort().forEach(p => {
+    sel.innerHTML += `<option value="${p}" ${p === o.placa ? 'selected' : ''}>${_placaLabel(p)}</option>`;
+  });
+  sel.style.fontFamily = "'IBM Plex Mono', monospace";
+  sel.style.fontSize   = '13px';
+  const selProd = document.getElementById('edit-produto-select');
+  selProd.innerHTML = '<option value="">Selecione...</option>';
+  db_produtos.sort().forEach(p => selProd.innerHTML += `<option value="${p}" ${p === o.produto ? 'selected' : ''}>${p}</option>`);
+  document.getElementById('edit-um-input').value = o.umidade;
+  document.getElementById('edit-bruto-input').value = o.bruto;
+  document.getElementById('edit-origem-input').value = o.origem || '';
+  document.getElementById('edit-cultivar-input').value = o.cultivar || '';
+  document.getElementById('modal-edit').style.display = 'flex';
+}
+function fecharModal() { document.getElementById('modal-edit').style.display = 'none'; }
+function confirmarEdicao() {
+  const o = db_ordens.find(x => x.id === currentEditId);
+  if(o) {
+    const nP  = document.getElementById('edit-placa-select').value;
+    const nPr = document.getElementById('edit-produto-select').value;
+    const nU  = document.getElementById('edit-um-input').value;
+    const nB  = parseFloat(document.getElementById('edit-bruto-input').value) || o.bruto;
+    const nOr = document.getElementById('edit-origem-input').value.toUpperCase().trim();
+    const nCu = document.getElementById('edit-cultivar-input').value.toUpperCase().trim();
+    if(o.placa !== nP || o.produto !== nPr || o.umidade !== nU || o.bruto !== nB || o.origem !== nOr || o.cultivar !== nCu) { o.editado = true; }
+    o.placa = nP; o.produto = nPr; o.umidade = nU; o.bruto = nB;
+    o.origem = nOr; o.cultivar = nCu;
+    o.tara = parseFloat(db_frota[nP]?.tara) || 0; o.liquido = o.bruto - o.tara;
+    _lsSet('ordens', db_ordens);
+    renderHistorico(); renderGrafico(); fecharModal(); showToast("Atualizado!");
+  }
+}
+
+function renderFrota() {
+  const tbody = document.querySelector('#tbl-frota tbody');
+  tbody.innerHTML = Object.keys(db_frota).sort().map(p => `<tr>
+    <td style="font-family:'IBM Plex Mono',monospace; font-weight:700; white-space:nowrap">${p}</td>
+    <td style="text-align:center"><input type="number" value="${db_frota[p].tara || ''}" style="width:90px; text-align:center" onchange="db_frota['${p}'].tara=this.value; _lsSet('frota', db_frota)"></td>
+    <td style="white-space:nowrap">${db_frota[p].motorista}</td>
+    <td><input type="text" value="${db_frota[p].origem || ''}" placeholder="—" style="width:100%; min-width:80px; text-transform:uppercase" onchange="db_frota['${p}'].origem=this.value.toUpperCase().trim(); _lsSet('frota', db_frota)"></td>
+    <td><input type="text" value="${db_frota[p].cultivar || ''}" placeholder="—" style="width:100%; min-width:80px; text-transform:uppercase" onchange="db_frota['${p}'].cultivar=this.value.toUpperCase().trim(); _lsSet('frota', db_frota)"></td>
+    <td style="text-align:center; white-space:nowrap"><button onclick="excluirFrota('${p}')" style="background:#fee; border:1.5px solid #fcc; color:red; border-radius:5px; padding:4px 9px; cursor:pointer; font-weight:700; font-size:13px">✕</button></td>
+  </tr>`).join('');
+}
+
+function limparTodasTaras() {
+  document.getElementById('modal-confirma-limpar-taras').style.display = 'flex';
+}
+function _fecharModalLimparTaras() {
+  document.getElementById('modal-confirma-limpar-taras').style.display = 'none';
+}
+function _confirmarLimparTaras() {
+  _fecharModalLimparTaras();
+  Object.keys(db_frota).forEach(p => db_frota[p].tara = '');
+  _lsSet('frota', db_frota);
+  renderFrota();
+  showToast("Taras limpas!");
+}
+function salvarFrota() {
+  const p = document.getElementById('cfg-placa').value.toUpperCase().trim();
+  const m = document.getElementById('cfg-motorista').value.toUpperCase().trim();
+  const or = document.getElementById('cfg-origem').value.toUpperCase().trim();
+  const cu = document.getElementById('cfg-cultivar').value.toUpperCase().trim();
+  if(p && m) {
+    // Preserva tara se o veículo já existia
+    const taraExistente = db_frota[p] ? db_frota[p].tara : '';
+    db_frota[p] = { motorista: m, tara: taraExistente, origem: or, cultivar: cu };
+    _lsSet('frota', db_frota);
+    document.getElementById('cfg-placa').value = "";
+    document.getElementById('cfg-motorista').value = "";
+    document.getElementById('cfg-origem').value = "";
+    document.getElementById('cfg-cultivar').value = "";
+    renderFrota(); updateSelects(); showToast("Veículo salvo!");
+  }
+}
+let _pendingExcluirFrota = null;
+function excluirFrota(p) {
+  _pendingExcluirFrota = p;
+  const mot = db_frota[p] && db_frota[p].motorista ? db_frota[p].motorista : '–';
+  document.getElementById('modal-excluir-frota-msg').innerHTML =
+    'O veículo <strong>' + p + '</strong> (motorista: <strong>' + mot + '</strong>) será removido da frota.';
+  document.getElementById('modal-confirma-excluir-frota').style.display = 'flex';
+}
+function _fecharModalExcluirFrota() {
+  document.getElementById('modal-confirma-excluir-frota').style.display = 'none';
+  _pendingExcluirFrota = null;
+}
+function _confirmarExcluirFrota() {
+  if (_pendingExcluirFrota) {
+    delete db_frota[_pendingExcluirFrota];
+    _lsSet('frota', db_frota);
+    renderFrota(); updateSelects(); showToast('Veículo removido!');
+  }
+  _fecharModalExcluirFrota();
+}
+function renderProdutos() {
+  const tbody = document.querySelector('#tbl-produtos tbody');
+  tbody.innerHTML = db_produtos.sort().map((p, i) => `<tr><td>${p}</td><td><button onclick="excluirProd(${i})" style="border:none; background:none; color:red; cursor:pointer">✕</button></td></tr>`).join('');
+}
+function salvarProduto() {
+  const p = document.getElementById('cfg-prod-nome').value.toUpperCase().trim();
+  if(p) { db_produtos.push(p); _lsSet('produtos', db_produtos); document.getElementById('cfg-prod-nome').value = ""; renderProdutos(); updateSelects(); }
+}
+function excluirProd(i) { db_produtos.splice(i, 1); _lsSet('produtos', db_produtos); renderProdutos(); updateSelects(); }
+let _pendingExcluirOrdemId = null;
+function excluirOrdem(id) {
+  _pendingExcluirOrdemId = id;
+  document.getElementById('modal-confirma-excluir-ordem').style.display = 'flex';
+}
+function _fecharModalExcluirOrdem() {
+  document.getElementById('modal-confirma-excluir-ordem').style.display = 'none';
+  _pendingExcluirOrdemId = null;
+}
+function _confirmarExcluirOrdem() {
+  const id = _pendingExcluirOrdemId;
+  _fecharModalExcluirOrdem();
+  if (id === null) return;
+  db_ordens = db_ordens.filter(o => o.id !== id);
+  // Renumera todos em ordem cronológica (mais antigos primeiro = menor num)
+  const ordenados = [...db_ordens].sort((a,b) => a.id - b.id);
+  ordenados.forEach((o, i) => { o.num = i + 1; });
+  // Ajusta o contador para o próximo número disponível
+  contador = db_ordens.length + 1;
+  _lsSet('ordens', db_ordens);
+  _lsSet('contador', String(contador));
+  // Atualiza badge da nova entrada
+  document.getElementById('badge-num').innerText = "#" + String(contador).padStart(4,'0');
+  document.getElementById('pv-num').innerText = String(contador).padStart(4,'0');
+  renderHistorico();
+  renderGrafico();
+  showToast("Registro excluído e sequência corrigida!");
+}
+function exportarExcel() {
+  const colunas = ['Data','Placa','Fazenda - Talhão','Cultivar','P. Bruto','P. Tara','P. Líquido','Imp.(%)','Desc. Imp.(kg)','Um.(%)','Desc.Umi.(%)','Desc.Umi.(kg)','Total Des.(kg)','Peso Final','Acum.(kg)','Sc/60'];
+  const colsNum = new Set(['P. Bruto','P. Tara','P. Líquido','Imp.(%)','Desc. Imp.(kg)','Um.(%)','Desc.Umi.(%)','Desc.Umi.(kg)','Total Des.(kg)','Peso Final','Acum.(kg)','Sc/60']);
+  const colsLeft = new Set(['Fazenda - Talhão','Cultivar']);
+
+  const dados = db_ordens.map(o => ({
+    'Data':              o.data ? o.data.split('-').reverse().join('/') : '',
+    'Placa':             o.placa || '',
+    'Fazenda - Talhão':  o.origem || '',
+    'Cultivar':          o.cultivar || '',
+    'P. Bruto':          o.bruto || '',
+    'P. Tara':           o.tara || '',
+    'P. Líquido':        o.liquido || '',
+    'Imp.(%)':           '',
+    'Desc. Imp.(kg)':    '',
+    'Um.(%)':            o.umidade || '',
+    'Desc.Umi.(%)':      '',
+    'Desc.Umi.(kg)':     '',
+    'Total Des.(kg)':    '',
+    'Peso Final':        '',
+    'Acum.(kg)':         '',
+    'Sc/60':             ''
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(dados, { header: colunas });
+
+  ws['!cols'] = colunas.map(col => {
+    const max = Math.max(col.length, ...dados.map(r => String(r[col] || '').length));
+    return { wch: max + 4 };
+  });
+
+  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+
+  for (let R = range.s.r; R <= range.e.r; R++) {
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      const addr = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!ws[addr]) ws[addr] = { v: '', t: 's' };
+      const isHeader = R === 0;
+      const colName  = colunas[C];
+
+      let align = 'center';
+      if (!isHeader) {
+        if (colsNum.has(colName))  align = 'right';
+        else if (colsLeft.has(colName)) align = 'left';
+      }
+
+      ws[addr].s = {
+        alignment: { horizontal: align, vertical: 'center' },
+        font: { bold: isHeader, sz: 11 }
+      };
+    }
+  }
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Colheita");
+  const agora = new Date();
+  const data  = String(agora.getDate()).padStart(2,'0') + '-' + String(agora.getMonth()+1).padStart(2,'0') + '-' + agora.getFullYear();
+  const hora  = String(agora.getHours()).padStart(2,'0') + 'h' + String(agora.getMinutes()).padStart(2,'0');
+  XLSX.writeFile(wb, `Planilha de Colheita_${data}_${hora}.xlsx`, { cellStyles: true });
+}
+function showToast(m) { const t = document.getElementById('toast'); t.innerText = m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2000); }
+
+// Estado do modo do gráfico
+let modoGrafico = 'cargas'; // 'cargas' | 'peso'
+function setModoGrafico(modo) {
+  modoGrafico = modo;
+  document.getElementById('btn-modo-cargas').style.background = modo === 'cargas' ? 'var(--primary)' : '#fff';
+  document.getElementById('btn-modo-cargas').style.color      = modo === 'cargas' ? '#fff' : 'var(--muted)';
+  document.getElementById('btn-modo-peso').style.background   = modo === 'peso'   ? 'var(--primary)' : '#fff';
+  document.getElementById('btn-modo-peso').style.color        = modo === 'peso'   ? '#fff' : 'var(--muted)';
+  document.getElementById('grafico-label-y').innerText = modo === 'peso' ? 'Peso Líq. (t)' : 'Nº de Cargas';
+  renderGrafico();
+}
+
+// Dados do gráfico para uso no hover
+let _graficoData = { horas: [], barW: 0, gap: 0, padL: 0, padT: 0, plotH: 0, H: 0, maxVal: 0, modo: 'cargas' };
+
+function renderGrafico() {
+  const wrap = document.getElementById('grafico-fluxo-wrap');
+  if (db_ordens.length === 0) {
+    wrap.style.display = 'none';
+    // Limpa o canvas imediatamente para não mostrar dados residuais
+    const canvas = document.getElementById('grafico-fluxo');
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    _graficoData = { horas: [], barW: 0, gap: 0, padL: 0, padT: 0, plotH: 0, H: 0, maxVal: 0, modo: modoGrafico };
+    return;
+  }
+  wrap.style.display = 'block';
+
+  // Filtro de origem
+  const filtroOrigem = document.getElementById('grafico-filtro-origem')?.value || '';
+  // Atualiza opções do filtro
+  const origens = [...new Set(db_ordens.map(o => (o.origem || '').trim()).filter(Boolean))].sort();
+  const sel = document.getElementById('grafico-filtro-origem');
+  const selVal = sel.value;
+  sel.innerHTML = '<option value="">Todos os Talhões</option>';
+  origens.forEach(og => sel.innerHTML += `<option value="${og}" ${og === selVal ? 'selected' : ''}>${og}</option>`);
+
+  const ordens = filtroOrigem
+    ? db_ordens.filter(o => (o.origem || '').trim() === filtroOrigem)
+    : db_ordens;
+
+  // Acumula por hora
+  const horas = new Array(24).fill(0);
+  const pesos = new Array(24).fill(0);
+  ordens.forEach(o => {
+    if (o.hora) {
+      const h = parseInt(o.hora.split(':')[0]);
+      if (!isNaN(h) && h >= 0 && h < 24) {
+        horas[h]++;
+        pesos[h] += parseFloat(o.liquido) || 0;
+      }
+    }
+  });
+
+  const dados   = modoGrafico === 'peso' ? pesos.map(v => v / 1000) : horas; // toneladas se peso
+  const maxVal  = Math.max(...dados, 0.001);
+  const horaPico = dados.indexOf(Math.max(...dados));
+  const totalDia = modoGrafico === 'peso'
+    ? (dados.reduce((s,v)=>s+v,0)).toFixed(1) + ' t'
+    : ordens.length + ' carg' + (ordens.length !== 1 ? 'as' : 'a');
+  const horasAtivas = dados.filter(v => v > 0).length;
+  const media = horasAtivas > 0 ? (dados.reduce((s,v)=>s+v,0) / horasAtivas) : 0;
+
+  document.getElementById('grafico-subtitulo').innerHTML =
+    `🔝 Pico: <strong>${String(horaPico).padStart(2,'0')}h–${String(horaPico+1).padStart(2,'0')}h</strong> &nbsp;|&nbsp; Total: <strong>${totalDia}</strong>` +
+    (filtroOrigem ? ` &nbsp;|&nbsp; Talhão: <strong>${filtroOrigem}</strong>` : '');
+
+  const canvas = document.getElementById('grafico-fluxo');
+  const ctx    = canvas.getContext('2d');
+  const dpr    = Math.max(window.devicePixelRatio || 1, 2); // mínimo 2x para nitidez
+  const container = canvas.parentElement;
+  const W      = container.clientWidth || container.offsetWidth || 900;
+  const H      = 160;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  canvas.width  = Math.round(W  * dpr);
+  canvas.height = Math.round(H * dpr);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); // reset antes de escalar
+  ctx.scale(dpr, dpr);
+  ctx.imageSmoothingEnabled = false;
+
+  const padL = 8, padR = 6, padT = 20, padB = 28;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const gap   = 2;
+  const barW  = Math.max(4, plotW / 24 - gap);
+
+  // Salva dados para hover
+  _graficoData = { horas: dados, barW, gap, padL, padT, plotH, H, maxVal, modo: modoGrafico };
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Fundo zebrado leve por bloco de 3h
+  for (let h = 0; h < 24; h += 6) {
+    const x = padL + h * (barW + gap);
+    const w = 3 * (barW + gap);
+    ctx.fillStyle = 'rgba(240,242,245,0.6)';
+    ctx.fillRect(x, padT, w, plotH);
+  }
+
+  // Linhas de grade horizontais
+  const steps = 4;
+  for (let g = 0; g <= steps; g++) {
+    const val = (maxVal / steps) * g;
+    const y   = padT + plotH - (g / steps) * plotH;
+    ctx.strokeStyle = g === 0 ? '#c8d0e0' : '#e8ecf3';
+    ctx.lineWidth   = g === 0 ? 1.5 : 1;
+    ctx.setLineDash(g === 0 ? [] : [4, 4]);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+    ctx.setLineDash([]);
+    if (g > 0) {
+      ctx.fillStyle = '#9aaabb';
+      ctx.font = `600 8px IBM Plex Mono, monospace`;
+      ctx.textAlign = 'right';
+      const label = modoGrafico === 'peso' ? val.toFixed(1) : Math.round(val);
+      ctx.fillText(label, padL - 2, y + 3);
+    }
+  }
+
+  // Linha de média (verde pontilhada)
+  if (horasAtivas > 0) {
+    const yMedia = padT + plotH - (media / maxVal) * plotH;
+    ctx.strokeStyle = '#1a7a4a';
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath(); ctx.moveTo(padL, yMedia); ctx.lineTo(W - padR, yMedia); ctx.stroke();
+    ctx.setLineDash([]);
+    // label da média
+    ctx.fillStyle = '#1a7a4a';
+    ctx.font = 'bold 8px IBM Plex Sans, monospace';
+    ctx.textAlign = 'left';
+    const mediaLabel = modoGrafico === 'peso' ? media.toFixed(1) + 't' : '⌀' + media.toFixed(1);
+    ctx.fillText(mediaLabel, W - padR - 30, yMedia - 3);
+  }
+
+  // Barras
+  dados.forEach((val, h) => {
+    const x      = padL + h * (barW + gap);
+    const isPico = h === horaPico && val > 0;
+
+    if (val === 0) {
+      ctx.fillStyle = '#edf0f5';
+      ctx.fillRect(x, padT + plotH - 2, barW, 2);
+      return;
+    }
+
+    const barH = Math.max(4, (val / maxVal) * plotH);
+    const y    = padT + plotH - barH;
+    const r    = Math.min(4, barW / 2);
+
+    const grad = ctx.createLinearGradient(x, y, x, padT + plotH);
+    if (isPico) {
+      grad.addColorStop(0, '#e67e22');
+      grad.addColorStop(1, '#f39c12');
+    } else {
+      grad.addColorStop(0, '#2952a3');
+      grad.addColorStop(1, '#6fa8dc');
+    }
+    ctx.fillStyle = grad;
+
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + barW - r, y);
+    ctx.quadraticCurveTo(x + barW, y, x + barW, y + r);
+    ctx.lineTo(x + barW, padT + plotH);
+    ctx.lineTo(x, padT + plotH);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.fill();
+
+    // Rótulo apenas para pico ou valores altos (≥ max*0.6) — evita poluição
+    if (isPico || val >= maxVal * 0.6) {
+      ctx.fillStyle = isPico ? '#c0392b' : '#1a2744';
+      ctx.font = `bold ${isPico ? 10 : 9}px IBM Plex Mono, monospace`;
+      ctx.textAlign = 'center';
+      const lbl = modoGrafico === 'peso' ? val.toFixed(1) : val;
+      ctx.fillText(lbl, x + barW / 2, y - 4);
+    }
+  });
+
+  // Labels eixo X (a cada 3h)
+  ctx.fillStyle = '#6b7a99';
+  ctx.font = '9px IBM Plex Sans, sans-serif';
+  ctx.textAlign = 'center';
+  for (let h = 0; h <= 21; h += 3) {
+    const x = padL + h * (barW + gap) + barW / 2;
+    ctx.fillText(String(h).padStart(2,'0') + 'h', x, H - 10);
+  }
+
+  // Linha de base
+  ctx.strokeStyle = '#c8d0e0';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(padL, padT + plotH);
+  ctx.lineTo(W - padR, padT + plotH);
+  ctx.stroke();
+}
+
+// Hover tooltip no canvas
+(function setupGraficoTooltip() {
+  document.addEventListener('DOMContentLoaded', () => {});
+  // Usa delegação após render
+  document.body.addEventListener('mousemove', function(e) {
+    const canvas = document.getElementById('grafico-fluxo');
+    const tooltip = document.getElementById('grafico-tooltip');
+    if (!canvas || !tooltip) return;
+    const rect = canvas.getBoundingClientRect();
+    if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+      tooltip.style.display = 'none'; return;
+    }
+    const mx = e.clientX - rect.left;
+    const { horas, barW, gap, padL, padT, plotH, H, modo } = _graficoData;
+    for (let h = 0; h < 24; h++) {
+      const x = padL + h * (barW + gap);
+      if (mx >= x && mx <= x + barW) {
+        const val = horas[h];
+        if (val === 0) { tooltip.style.display = 'none'; return; }
+        const label = modo === 'peso'
+          ? `${String(h).padStart(2,'0')}h–${String(h+1).padStart(2,'0')}h: ${val.toFixed(1)} t`
+          : `${String(h).padStart(2,'0')}h–${String(h+1).padStart(2,'0')}h: ${val} carga${val !== 1 ? 's' : ''}`;
+        tooltip.innerText = label;
+        tooltip.style.display = 'block';
+        tooltip.style.left = (e.clientX + 12) + 'px';
+        tooltip.style.top  = (e.clientY - 28) + 'px';
+        return;
+      }
+    }
+    tooltip.style.display = 'none';
+  });
+  document.body.addEventListener('mouseleave', () => {
+    const t = document.getElementById('grafico-tooltip');
+    if (t) t.style.display = 'none';
+  });
+})();
+
+function init() {
+  const n = new Date();
+  document.getElementById('f-data').valueAsDate = n;
+  document.getElementById('f-hora').value = String(n.getHours()).padStart(2,'0') + ':' + String(n.getMinutes()).padStart(2,'0');
+  document.getElementById('badge-num').innerText = "#" + String(contador).padStart(4,'0');
+  document.getElementById('f-peso').value = ""; document.getElementById('f-um').value = ""; document.getElementById('f-placa').value = ""; document.getElementById('f-motorista').value = "";
+  document.getElementById('f-obs').value = ""; document.getElementById('f-obs').readOnly = false; document.getElementById('f-obs').style.background = '';
+  document.getElementById('f-semente').checked = false;
+  updateSelects(); sync();
+  // Atualiza gráfico se a aba histórico estiver visível
+  if (document.getElementById('tab-historico').classList.contains('active')) renderGrafico();
+}
+
+setInterval(() => { document.getElementById('clock').innerText = new Date().toLocaleString('pt-BR'); }, 1000);
+init();
+
+// Re-renderiza gráfico ao redimensionar janela
+window.addEventListener('resize', () => {
+  if (document.getElementById('tab-historico').classList.contains('active')) renderGrafico();
+});
+
+// Garante renderização com dimensões reais ao trocar para aba histórico
+const _origShowTab = showTab;
+window.showTab = function(tab) {
+  _origShowTab(tab);
+  if (tab === 'historico') requestAnimationFrame(() => renderGrafico());
+};
+
+window.addEventListener('keydown', function(e) {
+  if (e.key === 'F10') {
+    e.preventDefault();
+    const btn = document.getElementById('btn-imprimir-vias');
+    if (btn) btn.click();
+  }
+  if (e.key === 'F8') {
+    e.preventDefault();
+    capturarBalanca();
+  }
+});
+
+// ─── BALANÇA INTEGRADA (F8) ──────────────────────────────────────────────────
+// Protocolo: Serial, 9600 baud, 7 data bits, parity even, 1 stop bit
+// Formato recebido: "000000EL_" ou "-00000EL_"  (6 dígitos + "EL_")
+// F8 / botão: conecta na primeira vez, captura nas seguintes.
+// O botão muda de cor conforme estado: azul=desconectada, verde=pronta, laranja=lendo.
+
+let _balancaPort   = null;
+let _balancaReader = null;
+let _balancaBuffer = '';
+let _balancaConectada = false;
+
+function _balancaSetStatus(estado) {
+  // estados: 'desconectada' | 'conectada' | 'lendo' | 'erro'
+  const btn   = document.getElementById('btn-balanca');
+  const label = document.getElementById('btn-balanca-label');
+  if (!btn) return;
+  btn.className = 'btn-balanca';
+  if (estado === 'conectada')    { btn.classList.add('conectada'); label.textContent = '⚖ PRONTA'; }
+  else if (estado === 'lendo')   { btn.classList.add('lendo');     label.textContent = '⚖ LENDO...'; }
+  else if (estado === 'erro')    { btn.classList.add('erro');      label.textContent = '⚖ ERRO'; setTimeout(() => _balancaSetStatus('desconectada'), 2000); }
+  else                           {                                  label.textContent = '⚖ F8'; }
+}
+
+async function _balancaConectar() {
+  try {
+    showToast('🔌 Selecione a porta da balança...');
+    _balancaPort = await navigator.serial.requestPort();
+    await _balancaPort.open({
+      baudRate: 9600,
+      dataBits: 7,
+      stopBits: 1,
+      parity:   'even',
+      flowControl: 'none'
+    });
+    _balancaConectada = true;
+    _balancaSetStatus('conectada');
+    showToast('✅ Balança conectada! Pressione F8 para capturar.');
+
+    // Inicia leitura contínua em background para manter o buffer atualizado
+    _balancaLeituraBackground();
+  } catch (err) {
+    if (err.name !== 'NotFoundError') {
+      _balancaPort = null;
+      _balancaConectada = false;
+      _balancaSetStatus('erro');
+      showToast('❌ Falha ao conectar: ' + (err.message || err));
+    }
+  }
+}
+
+async function _balancaLeituraBackground() {
+  // Lê continuamente e mantém _balancaBuffer com os dados mais recentes
+  try {
+    const decoder = new TextDecoderStream();
+    _balancaPort.readable.pipeTo(decoder.writable).catch(() => {
+      _balancaConectada = false;
+      _balancaSetStatus('desconectada');
+    });
+    _balancaReader = decoder.readable.getReader();
+    while (true) {
+      const { value, done } = await _balancaReader.read();
+      if (done) break;
+      _balancaBuffer += value;
+      // Mantém só os últimos 200 chars para não acumular infinitamente
+      if (_balancaBuffer.length > 200) _balancaBuffer = _balancaBuffer.slice(-100);
+    }
+  } catch(e) {
+    _balancaConectada = false;
+    _balancaSetStatus('desconectada');
+  }
+}
+
+function _balancaParsearBuffer(buf) {
+  // Formato: "000000EL_" ou "-00000EL_"
+  const matches = [...buf.matchAll(/([-\s]?\d{5,6})\s*EL/g)];
+  if (matches.length === 0) return null;
+  const raw = matches[matches.length - 1][1].trim();
+  const kg  = parseInt(raw, 10);
+  return isNaN(kg) ? null : kg;
+}
+
+async function capturarBalanca() {
+  if (!('serial' in navigator)) {
+    showToast('⚠️ Use Chrome ou Edge para leitura da balança.');
+    return;
+  }
+
+  // Se não conectada ainda, conecta primeiro
+  if (!_balancaConectada || !_balancaPort) {
+    await _balancaConectar();
+    return;
+  }
+
+  // Já conectada: captura o peso atual do buffer
+  _balancaSetStatus('lendo');
+  _balancaBuffer = ''; // limpa buffer para aguardar leitura fresca
+
+  // Aguarda até 2s por uma leitura válida
+  const peso = await new Promise(resolve => {
+    const inicio = Date.now();
+    const intervalo = setInterval(() => {
+      const kg = _balancaParsearBuffer(_balancaBuffer);
+      if (kg !== null) {
+        clearInterval(intervalo);
+        resolve(kg);
+        return;
+      }
+      if (Date.now() - inicio > 2000) {
+        clearInterval(intervalo);
+        resolve(null);
+      }
+    }, 50);
+  });
+
+  if (peso !== null) {
+    document.getElementById('f-peso').value = peso;
+    sync();
+    _balancaSetStatus('conectada');
+    showToast('⚖ Capturado: ' + peso.toLocaleString('pt-BR') + ' kg');
+  } else {
+    _balancaSetStatus('erro');
+    showToast('⚠️ Sem leitura da balança. Verifique o cabo e tente novamente.');
+  }
+}
+
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("service-worker.js")
+      .then(reg => console.log("SW registrado:", reg.scope))
+      .catch(err => console.log("SW falhou:", err));
+  });
+}
+</script>
+</body>
+</html>
