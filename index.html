@@ -12,6 +12,7 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>Sistema de Descargas - v27</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700;800&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -52,6 +53,8 @@
   .form-row { display: grid; gap: 16px; margin-bottom: 20px; }
   .form-row.cols-3 { grid-template-columns: 2fr 1fr 1fr; }
   .form-row.cols-2 { grid-template-columns: 1fr 1fr; }
+  .form-row.cols-4-custom { grid-template-columns: 1.2fr 0.8fr 1.5fr 1.5fr; }
+  .form-row.cols-peso-um { grid-template-columns: 2fr 1fr; }
   .field { display: flex; flex-direction: column; gap: 5px; }
   .field label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--muted); }
   .field input, .field select { background: var(--input-bg); border: 1.5px solid var(--line); border-radius: 6px; padding: 10px 12px; font-size: 14px; outline: none; width: 100%; }
@@ -160,6 +163,22 @@
   .resumo-card.c5 { border-left-color: #16a085; }
   .resumo-card.c6 { border-left-color: #d35400; }
   .resumo-card.c7 { border-left-color: #2980b9; }
+
+  /* CARD DIVIDIDO: comercial + semente */
+  .resumo-card-split {
+    display: flex; border-radius: 10px; box-shadow: var(--shadow);
+    overflow: hidden; transition: transform 0.15s; background: var(--card);
+  }
+  .resumo-card-split:hover { transform: translateY(-2px); }
+  .rc-split-lado { flex: 1; padding: 14px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .rc-split-lado.lado-grao  { border-left: 4px solid #4a90d9; border-right: 1px dashed var(--line); }
+  .rc-split-lado.lado-semente { background: #f4fbf0; }
+  .rc-split-badge {
+    font-size: 9px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase;
+    padding: 2px 6px; border-radius: 4px; display: inline-block; width: fit-content; margin-bottom: 1px;
+  }
+  .badge-grao    { background: #e8f0fb; color: #2c5f9e; }
+  .badge-semente { background: #d4edda; color: #1a6b35; }
 
   #modal-edit { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; }
   .modal-content { background: #fff; padding: 25px; border-radius: 10px; width: 350px; text-align: center; }
@@ -370,13 +389,13 @@
         <div id="badge-num" style="font-size:22px; font-weight:700; color:var(--accent2)">#0001</div>
       </div>
       <div class="form-body">
-        <div class="form-row cols-3">
+        <div class="form-row cols-4-custom">
           <div class="field"><label>Data</label><input type="date" id="f-data" oninput="sync()"></div>
           <div class="field"><label>Hora</label><input type="time" id="f-hora" oninput="sync()"></div>
           <div class="field"><label>Produto</label><select id="f-produto" onchange="sync()"></select></div>
+          <div class="field"><label>Placa</label><select id="f-placa" onchange="onPlacaChange()"></select></div>
         </div>
-        <div class="form-row cols-3">
-          <div class="field"><label>Umidade (%)</label><input type="number" id="f-um" step="0.1" oninput="sync()"></div>
+        <div class="form-row cols-peso-um">
           <div class="field">
             <label>Peso Bruto (kg)</label>
             <div style="display:flex; gap:6px; align-items:center;">
@@ -386,7 +405,7 @@
               </button>
             </div>
           </div>
-          <div class="field"><label>Placa</label><select id="f-placa" onchange="onPlacaChange()"></select></div>
+          <div class="field"><label>Umidade (%)</label><input type="number" id="f-um" step="0.1" oninput="sync()"></div>
         </div>
         <div class="form-row cols-2">
           <div class="field">
@@ -901,77 +920,134 @@ function renderResumo() {
     linhaSimples.style.display = 'none';
     return;
   }
-  
+
   linhaSimples.style.display = 'flex';
 
+  // ── Agrupamento ────────────────────────────────────────────
+  // Chave: "origem · cultivar" (sem diferenciar semente aqui)
+  // Cada grupo tem dois sub-buckets: grao e semente
   const grupos = {};
-  let totalGeralLiq = 0;
-  let somaUmidade = 0;
-  let contUmidade = 0;
+  let totalGeralLiq = 0, somaUmidade = 0, contUmidade = 0;
+
+  const acumular = (bucket, o, liq, um) => {
+    bucket.liquido += liq;
+    bucket.bruto   += parseFloat(o.bruto) || 0;
+    bucket.ordens  += 1;
+    if (o.produto) bucket.produto = o.produto;
+    if (!isNaN(um) && um > 0) { bucket.umSoma += um; bucket.umCount += 1; }
+  };
+  const novoBucket = (o) => ({ liquido:0, bruto:0, ordens:0, produto: o.produto||'', umSoma:0, umCount:0 });
 
   db_ordens.forEach(o => {
     const liq = parseFloat(o.liquido) || 0;
     totalGeralLiq += liq;
-    
     const um = parseFloat(o.umidade);
-    if (!isNaN(um) && um > 0) {
-        somaUmidade += um;
-        contUmidade++;
-    }
+    if (!isNaN(um) && um > 0) { somaUmidade += um; contUmidade++; }
 
     const origem   = (o.origem   || '').trim();
     const cultivar = (o.cultivar || '').trim();
-
     let chave;
-    if (origem && cultivar)      chave = `${origem} · ${cultivar}`;
-    else if (origem)             chave = origem;
-    else if (cultivar)           chave = cultivar;
-    else                         chave = '(Sem identificação)';
+    if (origem && cultivar) chave = `${origem} · ${cultivar}`;
+    else if (origem)        chave = origem;
+    else if (cultivar)      chave = cultivar;
+    else                    chave = '(Sem identificação)';
 
-    if (!grupos[chave]) grupos[chave] = { liquido: 0, bruto: 0, ordens: 0, produto: o.produto || '', umSoma: 0, umCount: 0 };
-    grupos[chave].liquido += liq;
-    grupos[chave].bruto   += parseFloat(o.bruto)   || 0;
-    grupos[chave].ordens  += 1;
-    if (o.produto) grupos[chave].produto = o.produto;
-    if (!isNaN(um) && um > 0) { grupos[chave].umSoma += um; grupos[chave].umCount += 1; }
+    if (!grupos[chave]) grupos[chave] = { grao: null, semente: null };
+
+    // Detecta semente pela obs
+    const ehSemente = (o.obs || '').toUpperCase().startsWith('SEMENTE');
+    const tipo = ehSemente ? 'semente' : 'grao';
+    if (!grupos[chave][tipo]) grupos[chave][tipo] = novoBucket(o);
+    acumular(grupos[chave][tipo], o, liq, um);
   });
 
-  // Atualiza a linha simples solicitada
-  const mediaGeralUm = contUmidade > 0 ? (somaUmidade / contUmidade).toFixed(1) : "0.0";
+  // ── Linha de totais ────────────────────────────────────────
+  const mediaGeralUm = contUmidade > 0 ? (somaUmidade / contUmidade).toFixed(1) : '0.0';
   linhaSimples.innerHTML = `
     <span>CARGAS: <strong>${db_ordens.length}</strong></span>
     <span>TOTAL LÍQ: <strong>${fmtInt(totalGeralLiq)} kg</strong></span>
     <span>UMID. MÉDIA: <strong>${mediaGeralUm}%</strong></span>
   `;
 
-  const lista = Object.entries(grupos).sort((a, b) => b[1].liquido - a[1].liquido);
-  
-
+  // ── Renderização ────────────────────────────────────────────
   const CORES = ['c0','c1','c2','c3','c4','c5','c6','c7'];
 
-  grid.innerHTML = lista.map(([chave, v], i) => {
-    const pct = totalGeralLiq > 0 ? ((v.liquido / totalGeralLiq) * 100).toFixed(1) : 0;
+  // Ordena por total líquido decrescente
+  const lista = Object.entries(grupos).sort((a, b) => {
+    const totA = (a[1].grao?.liquido||0) + (a[1].semente?.liquido||0);
+    const totB = (b[1].grao?.liquido||0) + (b[1].semente?.liquido||0);
+    return totB - totA;
+  });
+
+  const umidadeHTML = (bucket) => {
+    if (!bucket || bucket.umCount === 0) return '';
+    const mediaUm = (bucket.umSoma / bucket.umCount).toFixed(1);
+    const umColor = parseFloat(mediaUm) > 14 ? '#e67e22' : '#1a7a4a';
+    const umIcon  = parseFloat(mediaUm) > 14 ? '⚠️' : '✅';
+    return `<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:${umColor}">${umIcon} ${mediaUm}%</div>`;
+  };
+
+  const ladoHTML = (bucket, tipo, totalGeralLiq) => {
+    if (!bucket) return '';
+    const pct = totalGeralLiq > 0 ? ((bucket.liquido / totalGeralLiq) * 100).toFixed(1) : 0;
+    const isGrao = tipo === 'grao';
+    return `
+      <div class="rc-split-lado ${isGrao ? 'lado-grao' : 'lado-semente'}">
+        <span class="rc-split-badge ${isGrao ? 'badge-grao' : 'badge-semente'}">${isGrao ? '🌾 comercial' : '🌱 Semente'}</span>
+        <div class="rc-peso" style="font-size:17px">${fmtInt(bucket.liquido)} kg</div>
+        <div class="rc-meta">
+          <span>📦 ${bucket.ordens} ${bucket.ordens !== 1 ? 'viagens' : 'viagem'}</span>
+          <span>📊 ${pct}%</span>
+        </div>
+        ${umidadeHTML(bucket)}
+      </div>`;
+  };
+
+  grid.innerHTML = lista.map(([chave, grupo], i) => {
+    const { grao, semente } = grupo;
+    const totalLiq = (grao?.liquido||0) + (semente?.liquido||0);
+    const pct = totalGeralLiq > 0 ? ((totalLiq / totalGeralLiq) * 100).toFixed(1) : 0;
     const cor = CORES[i % CORES.length];
     const partes = chave.split(' · ');
-    const titulo  = partes[0];
-    const sub     = partes.length > 1 ? partes.slice(1).join(' · ') : '';
+    const titulo = partes[0];
+    const sub    = partes.length > 1 ? partes.slice(1).join(' · ') : '';
 
+    // Card simples (só comercial ou só semente)
+    if (!grao || !semente) {
+      const bucket = grao || semente;
+      const ehSemente = !grao;
+      const mediaUm = bucket.umCount > 0 ? (bucket.umSoma / bucket.umCount).toFixed(1) : null;
+      const umColor = mediaUm && parseFloat(mediaUm) > 14 ? '#e67e22' : '#1a7a4a';
+      const umIcon  = mediaUm && parseFloat(mediaUm) > 14 ? '⚠️' : '✅';
+      return `
+      <div class="resumo-card ${cor}" ${ehSemente ? 'style="border-left-color:#1a7a4a;background:#f8fdf5"' : ''}>
+        ${ehSemente ? '<span class="rc-split-badge badge-semente" style="margin-bottom:4px">🌱 Semente</span>' : ''}
+        <div class="rc-titulo">${titulo}</div>
+        ${sub ? `<div class="rc-subtitulo">${sub}</div>` : ''}
+        <div class="rc-peso">${fmtInt(bucket.liquido)} kg</div>
+        <div class="rc-meta">
+          <span>📦 ${bucket.ordens} ${bucket.ordens !== 1 ? 'viagens' : 'viagem'}</span>
+          <span>📊 ${pct}%</span>
+          ${bucket.produto ? `<span>🌾 ${bucket.produto}</span>` : ''}
+        </div>
+        ${mediaUm ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:${umColor}">${umIcon} Umid. média: ${mediaUm}%</div>` : ''}
+      </div>`;
+    }
+
+    // Card dividido (comercial + semente da mesma origem/cultivar)
     return `
-    <div class="resumo-card ${cor}">
-      <div class="rc-titulo">${titulo}</div>
-      ${sub ? `<div class="rc-subtitulo">${sub}</div>` : ''}
-      <div class="rc-peso">${fmtInt(v.liquido)} kg</div>
-      <div class="rc-meta">
-        <span>📦 ${v.ordens} ${v.ordens !== 1 ? 'viagens' : 'viagem'}</span>
-        <span>📊 ${pct}%</span>
-        ${v.produto ? `<span>🌾 ${v.produto}</span>` : ''}
+    <div class="resumo-card-split">
+      <div style="padding:10px 12px 4px 12px; display:flex; flex-direction:column; gap:2px; border-bottom:1px solid var(--line); width:100%; position:absolute; top:0; left:0; display:none"></div>
+      <div style="display:flex;flex-direction:column;width:100%">
+        <div style="padding:8px 14px 6px 18px; border-bottom:1px solid var(--line); background:var(--card)">
+          <div class="rc-titulo" style="font-size:12px">${titulo}</div>
+          ${sub ? `<div class="rc-subtitulo">${sub}</div>` : ''}
+        </div>
+        <div style="display:flex">
+          ${ladoHTML(grao, 'grao', totalGeralLiq)}
+          ${ladoHTML(semente, 'semente', totalGeralLiq)}
+        </div>
       </div>
-      ${v.umCount > 0 ? (() => {
-        const mediaUm = (v.umSoma / v.umCount).toFixed(1);
-        const umColor = parseFloat(mediaUm) > 14 ? '#e67e22' : '#1a7a4a';
-        const umIcon  = parseFloat(mediaUm) > 14 ? '⚠️' : '✅';
-        return `<div style="margin-top:6px; padding-top:6px; border-top:1px solid var(--line); font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:700; color:${umColor}">${umIcon} Umid. média: ${mediaUm}%</div>`;
-      })() : ''}
     </div>`;
   }).join('');
 }
@@ -1131,65 +1207,123 @@ function _confirmarExcluirOrdem() {
   renderGrafico();
   showToast("Registro excluído e sequência corrigida!");
 }
-function exportarExcel() {
-  const colunas = ['Data','Placa','Fazenda - Talhão','Cultivar','P. Bruto','P. Tara','P. Líquido','Imp.(%)','Desc. Imp.(kg)','Um.(%)','Desc.Umi.(%)','Desc.Umi.(kg)','Total Des.(kg)','Peso Final','Acum.(kg)','Sc/60'];
-  const colsNum = new Set(['P. Bruto','P. Tara','P. Líquido','Imp.(%)','Desc. Imp.(kg)','Um.(%)','Desc.Umi.(%)','Desc.Umi.(kg)','Total Des.(kg)','Peso Final','Acum.(kg)','Sc/60']);
-  const colsLeft = new Set(['Fazenda - Talhão','Cultivar']);
+async function exportarExcel() {
+  // Definição das colunas:
+  // align      = alinhamento das células de DADOS
+  // headerAlign= alinhamento do cabeçalho (sempre center conforme imagem de referência)
+  // width      = largura fixa (caracteres), ajustada ao conteúdo típico
+  // wrapHeader = quebra de linha no cabeçalho (colunas estreitas)
+  const colunas = [
+    { key: 'Data',       label: 'Data',           align: 'center', width: 12, wrapHeader: false },
+    { key: 'Placa',      label: 'Placa',          align: 'center', width: 10, wrapHeader: false },
+    { key: 'FazTalhao',  label: 'Fazenda - Talhão', align: 'left', width: 22, wrapHeader: false },
+    { key: 'Cultivar',   label: 'Cultivar',       align: 'left',   width: 16, wrapHeader: false },
+    { key: 'PBruto',     label: 'P. Bruto',       align: 'center', width: 10, wrapHeader: false },
+    { key: 'PTara',      label: 'P. Tara',        align: 'center', width: 10, wrapHeader: false },
+    { key: 'PLiquido',   label: 'P. Líquido',     align: 'right',  width: 11, wrapHeader: false },
+    { key: 'ImpPct',     label: 'Imp.\n(%)',       align: 'center', width:  8, wrapHeader: true  },
+    { key: 'DescImpKg',  label: 'Desc.\nImp.(kg)', align: 'right',  width: 10, wrapHeader: true  },
+    { key: 'UmPct',      label: 'Um.\n(%)',        align: 'right',  width:  8, wrapHeader: true  },
+    { key: 'DescUmiPct', label: 'Desc.\nUmi.(%)',  align: 'center', width: 10, wrapHeader: true  },
+    { key: 'DescUmiKg',  label: 'Desc.\nUmi.(kg)', align: 'center', width: 10, wrapHeader: true  },
+    { key: 'TotalDesKg', label: 'Total Des.\n(kg)', align: 'center', width: 11, wrapHeader: true  },
+    { key: 'PesoFinal',  label: 'Peso Final',     align: 'center', width: 11, wrapHeader: false },
+    { key: 'AcumKg',     label: 'Acum.\n(kg)',    align: 'center', width: 10, wrapHeader: true  },
+    { key: 'Sc60',       label: 'Sc/60',          align: 'center', width:  8, wrapHeader: false },
+  ];
 
-  const dados = db_ordens.map(o => ({
-    'Data':              o.data ? o.data.split('-').reverse().join('/') : '',
-    'Placa':             o.placa || '',
-    'Fazenda - Talhão':  o.origem || '',
-    'Cultivar':          o.cultivar || '',
-    'P. Bruto':          o.bruto || '',
-    'P. Tara':           o.tara || '',
-    'P. Líquido':        o.liquido || '',
-    'Imp.(%)':           '',
-    'Desc. Imp.(kg)':    '',
-    'Um.(%)':            o.umidade || '',
-    'Desc.Umi.(%)':      '',
-    'Desc.Umi.(kg)':     '',
-    'Total Des.(kg)':    '',
-    'Peso Final':        '',
-    'Acum.(kg)':         '',
-    'Sc/60':             ''
-  }));
+  // Ordem cronológica: primeiro lançamento = primeira linha
+  const ordensOrdenadas = [...db_ordens].reverse();
 
-  const ws = XLSX.utils.json_to_sheet(dados, { header: colunas });
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Sistema de Descargas';
+  const ws = wb.addWorksheet('Colheita');
 
-  ws['!cols'] = colunas.map(col => {
-    const max = Math.max(col.length, ...dados.map(r => String(r[col] || '').length));
-    return { wch: max + 4 };
+  // Largura das colunas: fixa conforme definição acima,
+  // expandindo se o conteúdo for maior
+  ws.columns = colunas.map(col => {
+    const maxConteudo = ordensOrdenadas.reduce((m, o) => {
+      const mapa = {
+        Data:      o.data ? o.data.split('-').reverse().join('/') : '',
+        Placa:     o.placa    || '',
+        FazTalhao: o.origem   || '',
+        Cultivar:  o.cultivar || '',
+        PBruto:    o.bruto    || '',
+        PTara:     o.tara     || '',
+        PLiquido:  o.liquido  || '',
+        UmPct:     o.umidade  || '',
+      };
+      return Math.max(m, String(mapa[col.key] || '').length);
+    }, 0);
+    return { key: col.key, width: Math.max(col.width, maxConteudo + 1) };
   });
 
-  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+  // ── CABEÇALHO ──────────────────────────────────────────────
+  const headerRow = ws.getRow(1);
+  headerRow.height = 30; // altura maior para acomodar 2 linhas de texto
 
-  for (let R = range.s.r; R <= range.e.r; R++) {
-    for (let C = range.s.c; C <= range.e.c; C++) {
-      const addr = XLSX.utils.encode_cell({ r: R, c: C });
-      if (!ws[addr]) ws[addr] = { v: '', t: 's' };
-      const isHeader = R === 0;
-      const colName  = colunas[C];
+  colunas.forEach((col, i) => {
+    const cell = headerRow.getCell(i + 1);
+    cell.value     = col.label;
+    cell.font      = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F3864' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border    = {
+      bottom: { style: 'thin', color: { argb: 'FFAAAAAA' } },
+      right:  { style: 'hair', color: { argb: 'FFCCCCCC' } }
+    };
+  });
 
-      let align = 'center';
-      if (!isHeader) {
-        if (colsNum.has(colName))  align = 'right';
-        else if (colsLeft.has(colName)) align = 'left';
+  // ── LINHAS DE DADOS ────────────────────────────────────────
+  ordensOrdenadas.forEach((o, idx) => {
+    const rowData = {
+      Data:       o.data ? o.data.split('-').reverse().join('/') : '',
+      Placa:      (o.placa    || '').toUpperCase(),
+      FazTalhao:  (o.origem   || '').toUpperCase(),
+      Cultivar:   (o.cultivar || '').toUpperCase(),
+      PBruto:     o.bruto   ? Number(o.bruto)   : null,
+      PTara:      o.tara    ? Number(o.tara)    : null,
+      PLiquido:   o.liquido ? Number(o.liquido) : null,
+      ImpPct:     null, DescImpKg: null,
+      UmPct:      o.umidade ? String(o.umidade) : null,
+      DescUmiPct: null, DescUmiKg: null, TotalDesKg: null,
+      PesoFinal:  null, AcumKg:    null, Sc60: null
+    };
+
+    const row = ws.addRow(rowData);
+    row.height = 13.5;
+
+    // Fundo alternado para facilitar leitura
+    const bgColor = idx % 2 === 0 ? 'FFFFFFFF' : 'FFF2F2F2';
+
+    colunas.forEach((col, i) => {
+      const cell = row.getCell(i + 1);
+      cell.font      = { name: 'Arial', size: 11 };
+      cell.alignment = { horizontal: col.align, vertical: 'middle', wrapText: false };
+      cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+      cell.border    = { right: { style: 'hair', color: { argb: 'FFDDDDDD' } } };
+
+      // Formato numérico com separador de milhar (sem decimais para pesos)
+      if (cell.value !== null && cell.value !== '') {
+        if (['PBruto','PTara','PLiquido'].includes(col.key)) {
+          cell.numFmt = '#,##0';
+        } else if (['ImpPct','UmPct','DescUmiPct'].includes(col.key)) {
+          cell.numFmt = '0.0';
+        }
       }
+    });
+  });
 
-      ws[addr].s = {
-        alignment: { horizontal: align, vertical: 'center' },
-        font: { bold: isHeader, sz: 11 }
-      };
-    }
-  }
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Colheita");
-  const agora = new Date();
-  const data  = String(agora.getDate()).padStart(2,'0') + '-' + String(agora.getMonth()+1).padStart(2,'0') + '-' + agora.getFullYear();
-  const hora  = String(agora.getHours()).padStart(2,'0') + 'h' + String(agora.getMinutes()).padStart(2,'0');
-  XLSX.writeFile(wb, `Planilha de Colheita_${data}_${hora}.xlsx`, { cellStyles: true });
+  // ── DOWNLOAD ───────────────────────────────────────────────
+  const agora   = new Date();
+  const dataStr = String(agora.getDate()).padStart(2,'0') + '-' + String(agora.getMonth()+1).padStart(2,'0') + '-' + agora.getFullYear();
+  const horaStr = String(agora.getHours()).padStart(2,'0') + 'h' + String(agora.getMinutes()).padStart(2,'0');
+  const buffer  = await wb.xlsx.writeBuffer();
+  const blob    = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url     = URL.createObjectURL(blob);
+  const a       = document.createElement('a');
+  a.href = url; a.download = `Planilha de Colheita_${dataStr}_${horaStr}.xlsx`; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function showToast(m) { const t = document.getElementById('toast'); t.innerText = m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2000); }
 
