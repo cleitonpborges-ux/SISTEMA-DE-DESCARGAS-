@@ -444,56 +444,49 @@
   </div>
 
   <div id="tab-historico" class="section">
-    <!-- GRÁFICO DE FLUXO HORÁRIO -->
+    <!-- SELETOR DE DATA — controla o gráfico e o histórico abaixo -->
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap; background:#fff; border-radius:12px; box-shadow:0 2px 16px rgba(26,39,68,0.10); padding:14px 18px;">
+      <input type="date" id="filtro-data-historico" onchange="renderHistorico()"
+        style="font-size:13px; padding:8px 12px; border:1.5px solid var(--line); border-radius:6px; background:var(--input-bg); color:var(--text); font-family:'IBM Plex Sans',sans-serif;">
+    </div>
+
+    <!-- GRÁFICO: CADA COLUNA = 1 CAMINHÃO -->
     <div id="grafico-fluxo-wrap" style="background:#fff; border-radius:12px; box-shadow:0 2px 16px rgba(26,39,68,0.10); padding:18px 22px 14px; margin-bottom:22px; display:none;">
 
       <!-- Cabeçalho do gráfico -->
       <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:10px; gap:12px; flex-wrap:wrap;">
         <div>
-          <div style="font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:700; text-transform:uppercase; color:var(--primary); letter-spacing:0.5px;">⏱ Fluxo de Entradas por Horário</div>
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:700; text-transform:uppercase; color:var(--primary); letter-spacing:0.5px;">Caminhões do Dia — Peso e Horário</div>
           <div id="grafico-subtitulo" style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--muted); margin-top:3px;"></div>
         </div>
-        <!-- Controles: filtro de origem + toggle -->
+        <!-- Controle: filtro de origem -->
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
           <select id="grafico-filtro-origem" onchange="renderGrafico()"
             style="font-size:11px; padding:5px 8px; border:1.5px solid var(--line); border-radius:6px; background:var(--input-bg); color:var(--text); font-family:'IBM Plex Sans',sans-serif; cursor:pointer;">
             <option value="">Todos os Talhões</option>
           </select>
-          <div style="display:flex; border:1.5px solid var(--line); border-radius:6px; overflow:hidden; font-size:11px; font-family:'IBM Plex Mono',monospace; font-weight:700;">
-            <button id="btn-modo-cargas" onclick="setModoGrafico('cargas')"
-              style="padding:5px 10px; border:none; cursor:pointer; background:var(--primary); color:#fff;">🚛 CARGAS</button>
-            <button id="btn-modo-peso" onclick="setModoGrafico('peso')"
-              style="padding:5px 10px; border:none; cursor:pointer; background:#fff; color:var(--muted);">⚖ PESO (kg)</button>
-          </div>
         </div>
       </div>
 
-      <!-- Tooltip hover -->
-      <div id="grafico-tooltip" style="display:none; position:fixed; background:var(--primary); color:#fff; padding:6px 10px; border-radius:6px; font-family:'IBM Plex Mono',monospace; font-size:11px; pointer-events:none; z-index:500; white-space:nowrap; box-shadow:0 4px 12px rgba(0,0,0,0.25);"></div>
-
-      <!-- Área do gráfico com label Y vertical -->
-      <div style="display:flex; gap:0; align-items:stretch;">
-        <div id="grafico-label-y" style="writing-mode:vertical-rl; transform:rotate(180deg); font-size:9px; font-family:'IBM Plex Sans',sans-serif; color:var(--muted); text-align:center; padding-right:4px; letter-spacing:0.5px; text-transform:uppercase; min-width:14px;">Nº de Cargas</div>
-        <div style="flex:1; position:relative;">
-          <canvas id="grafico-fluxo" style="width:100%; display:block; cursor:crosshair;"></canvas>
+      <!-- Área do gráfico: eixo Y fixo (peso) + colunas com rolagem horizontal -->
+      <div style="display:flex; gap:8px; align-items:flex-start;">
+        <div id="grafico-eixo-y" style="display:flex; flex-direction:column; justify-content:space-between; height:208px; width:32px; flex:0 0 auto; text-align:right; padding-right:2px; font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:600; color:var(--muted);"></div>
+        <div id="grafico-scroll" style="overflow-x:auto; overflow-y:hidden; flex:1; min-width:0;">
+          <div id="grafico-colunas" style="display:grid; grid-auto-flow:column; grid-auto-columns:minmax(60px,max-content); grid-template-rows: 208px auto; column-gap:12px; min-width:100%; background-image: repeating-linear-gradient(to top, var(--line) 0, var(--line) 1px, transparent 1px, transparent 25%); background-size: 100% 208px; background-position: bottom left; background-repeat: repeat-x;"></div>
         </div>
       </div>
-
-      <!-- Label eixo X -->
-      <div style="text-align:center; font-size:9px; color:var(--muted); font-family:'IBM Plex Sans',sans-serif; text-transform:uppercase; letter-spacing:0.5px; margin-top:2px; padding-left:18px;">Hora de Chegada</div>
 
       <!-- Legenda -->
-      <div style="display:flex; gap:16px; margin-top:10px; font-size:10px; color:var(--muted); font-family:'IBM Plex Sans',sans-serif; flex-wrap:wrap;">
-        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#e67e22;display:inline-block;"></span>Pico do dia</span>
-        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#2952a3;display:inline-block;"></span>Com entradas</span>
-        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#e8ecf3;display:inline-block;"></span>Sem entradas</span>
-        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:2px;border-radius:1px;background:#1a7a4a;display:inline-block;"></span>Média/hora</span>
+      <div style="display:flex; gap:16px; margin-top:14px; font-size:10px; color:var(--muted); font-family:'IBM Plex Sans',sans-serif; flex-wrap:wrap;">
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#b9c2d1;display:inline-block;"></span>Carga normal</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#2952a3;display:inline-block;"></span>Maior carga do dia</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#e0685c;display:inline-block;"></span>Menor carga do dia</span>
       </div>
     </div>
 
     <div class="resumo-wrap">
       <div class="resumo-header">
-        <h4>📦 Resumo por Origem / Cultivar</h4>
+        <h4>Resumo por Origem / Cultivar</h4>
 
       </div>
       <div class="resumo-grid" id="resumo-grid"></div>
@@ -571,6 +564,30 @@
         </div>
       </div>
     </div>
+    <!-- ÁREAS: cadastro de hectares por Lote/Pivô/Talhão, usado para calcular a produtividade -->
+    <div style="margin-top:24px;">
+      <div class="form-card">
+        <div class="form-header"><h2>ÁREAS (LOTES / PIVÔS)</h2></div>
+        <div class="form-body">
+          <div class="form-row cols-2" style="margin-bottom:0">
+            <div class="field"><label>Lote / Pivô / Talhão</label><input type="text" id="cfg-area-nome" style="text-transform:uppercase" placeholder="Igual ao campo Origem"></div>
+            <div class="field"><label>Área (ha)</label><input type="number" step="0.01" min="0" id="cfg-area-ha" placeholder="Ex: 120.5"></div>
+          </div>
+          <p style="font-size:11px; color:var(--muted); margin-top:6px;">O nome cadastrado aqui deve ser igual ao usado no campo <strong>Origem</strong> das descargas, para o sistema vincular a área e calcular a produtividade (kg/ha e sc/ha) no Histórico.</p>
+          <button class="btn btn-primary" style="margin-top:10px" onclick="salvarArea()">+ SALVAR ÁREA</button>
+          <div style="overflow-x:auto;"><table id="tbl-areas" style="min-width:400px;">
+            <thead>
+              <tr>
+                <th>Lote / Pivô / Talhão</th>
+                <th style="text-align:center; width:140px">Área (ha)</th>
+                <th style="width:44px"></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -581,7 +598,7 @@
 // A chave ativa é sempre a mais recente encontrada no localStorage.
 // Se existirem dados em versões antigas (v23_, v24_, v25_...), eles são migrados
 // automaticamente para a chave atual SEM perder nenhum dado.
-const STORAGE_KEYS = ['frota','ordens','produtos','contador'];
+const STORAGE_KEYS = ['frota','ordens','produtos','contador','areas'];
 const VERSOES_CONHECIDAS = ['v23_','v24_','v25_','v26_'];
 const VERSAO_ATUAL = 'v26_';
 
@@ -623,6 +640,7 @@ function _lsSet(sufixo, valor) {
 let db_frota    = _lsGet(VERSAO_ATUAL + 'frota',    {});
 let db_ordens   = _lsGet(VERSAO_ATUAL + 'ordens',   []);
 let db_produtos = _lsGet(VERSAO_ATUAL + 'produtos', ['SOJA', 'MILHO']);
+let db_areas    = _lsGet(VERSAO_ATUAL + 'areas',    {});
 let contador    = parseInt(localStorage.getItem(VERSAO_ATUAL + 'contador')) || 1;
 let currentEditId = null;
 
@@ -634,7 +652,7 @@ function showTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
   document.getElementById('btn-' + tab).classList.add('active');
-  if(tab === 'config') { renderProdutos(); renderFrota(); }
+  if(tab === 'config') { renderProdutos(); renderFrota(); renderAreas(); }
   if(tab === 'historico') renderHistorico();
 }
 
@@ -838,24 +856,32 @@ function imprimirSegundaVia(id) {
   }, 200);
 }
 
+// Retorna as ordens do dia selecionado no seletor de data (padrão: hoje)
+function getOrdensDoDia() {
+  const dataSel = document.getElementById('filtro-data-historico')?.value;
+  if (!dataSel) return db_ordens;
+  return db_ordens.filter(o => o.data === dataSel);
+}
+
 function renderHistorico() {
   const busca = (document.getElementById('hist-busca')?.value || '').trim().toUpperCase();
   const tbody = document.querySelector('#tbl-historico tbody');
+  const doDia = getOrdensDoDia();
 
-  // Filtragem por placa ou motorista
+  // Filtragem por placa ou motorista, dentro do dia selecionado
   const filtrado = busca
-    ? db_ordens.filter(o =>
+    ? doDia.filter(o =>
         (o.placa || '').toUpperCase().includes(busca) ||
         (o.motorista || '').toUpperCase().includes(busca)
       )
-    : db_ordens;
+    : doDia;
 
   const exibidos = filtrado.slice(0, 100);
   const ocultos  = filtrado.length - exibidos.length;
   tbody.innerHTML = exibidos.map((o, idx) => {
-    // posição real no array total (para renumeração visual)
-    const posGlobal = db_ordens.indexOf(o);
-    const numVisual = db_ordens.length - posGlobal; // mais recente = maior número
+    // posição real no array do dia (para renumeração visual)
+    const posGlobal = doDia.indexOf(o);
+    const numVisual = doDia.length - posGlobal; // mais recente = maior número
     return `<tr>
     <td>#${String(o.num).padStart(4,'0')}${o.editado ? '<span class="tag-editado">EDITADO</span>' : ''}</td>
     <td>${o.data.split('-').reverse().join('/')}<br><small>${o.hora}</small></td>
@@ -872,9 +898,13 @@ function renderHistorico() {
     </td>
   </tr>`; }).join('');
 
+  if (exibidos.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:16px; font-size:12px; color:var(--muted);">Nenhuma descarga registrada neste dia.</td></tr>`;
+  }
+
   if (ocultos > 0) {
     tbody.innerHTML += `<tr><td colspan="9" style="text-align:center; padding:10px; font-size:11px; color:var(--warn); font-family:'IBM Plex Mono',monospace; background:#fffbf5;">
-      ⚠️ Exibindo as 100 ordens mais recentes. Existem mais <strong>${ocultos}</strong> registro(s) oculto(s) — os totais abaixo consideram <strong>todos</strong> os registros.
+      ⚠️ Exibindo as 100 ordens mais recentes deste dia. Existem mais <strong>${ocultos}</strong> registro(s) oculto(s) — os totais abaixo consideram <strong>todos</strong> os registros do dia selecionado.
     </td></tr>`;
   }
 
@@ -885,13 +915,14 @@ function renderHistorico() {
 
 function renderTotalizador() {
   const tfoot = document.getElementById('tfoot-total');
-  if (db_ordens.length === 0) { tfoot.innerHTML = ''; return; }
+  const doDia = getOrdensDoDia();
+  if (doDia.length === 0) { tfoot.innerHTML = ''; return; }
 
-  const totalBruto  = db_ordens.reduce((s, o) => s + (parseFloat(o.bruto)   || 0), 0);
-  const totalTara   = db_ordens.reduce((s, o) => s + (parseFloat(o.tara)    || 0), 0);
-  const totalLiq    = db_ordens.reduce((s, o) => s + (parseFloat(o.liquido) || 0), 0);
-  const totalOrdens = db_ordens.length;
-  const umVals      = db_ordens.map(o => parseFloat(o.umidade)).filter(v => !isNaN(v) && v > 0);
+  const totalBruto  = doDia.reduce((s, o) => s + (parseFloat(o.bruto)   || 0), 0);
+  const totalTara   = doDia.reduce((s, o) => s + (parseFloat(o.tara)    || 0), 0);
+  const totalLiq    = doDia.reduce((s, o) => s + (parseFloat(o.liquido) || 0), 0);
+  const totalOrdens = doDia.length;
+  const umVals      = doDia.map(o => parseFloat(o.umidade)).filter(v => !isNaN(v) && v > 0);
   const mediaUm     = umVals.length > 0 ? (umVals.reduce((s, v) => s + v, 0) / umVals.length).toFixed(1) : null;
 
   tfoot.innerHTML = `
@@ -913,9 +944,10 @@ function renderResumo() {
   const grid = document.getElementById('resumo-grid');
   const badge = document.getElementById('resumo-total-geral');
   const linhaSimples = document.getElementById('resumo-linha-simples');
+  const doDia = getOrdensDoDia();
 
-  if (db_ordens.length === 0) {
-    grid.innerHTML = '<p class="resumo-vazio">Nenhuma descarga registrada ainda.</p>';
+  if (doDia.length === 0) {
+    grid.innerHTML = '<p class="resumo-vazio">Nenhuma descarga registrada neste dia.</p>';
     if (badge) badge.innerText = '';
     linhaSimples.style.display = 'none';
     return;
@@ -938,7 +970,7 @@ function renderResumo() {
   };
   const novoBucket = (o) => ({ liquido:0, bruto:0, ordens:0, produto: o.produto||'', umSoma:0, umCount:0 });
 
-  db_ordens.forEach(o => {
+  doDia.forEach(o => {
     const liq = parseFloat(o.liquido) || 0;
     totalGeralLiq += liq;
     const um = parseFloat(o.umidade);
@@ -952,7 +984,7 @@ function renderResumo() {
     else if (cultivar)      chave = cultivar;
     else                    chave = '(Sem identificação)';
 
-    if (!grupos[chave]) grupos[chave] = { grao: null, semente: null };
+    if (!grupos[chave]) grupos[chave] = { grao: null, semente: null, origem: origem };
 
     // Detecta semente pela obs
     const ehSemente = (o.obs || '').toUpperCase().startsWith('SEMENTE');
@@ -964,7 +996,7 @@ function renderResumo() {
   // ── Linha de totais ────────────────────────────────────────
   const mediaGeralUm = contUmidade > 0 ? (somaUmidade / contUmidade).toFixed(1) : '0.0';
   linhaSimples.innerHTML = `
-    <span>CARGAS: <strong>${db_ordens.length}</strong></span>
+    <span>CARGAS: <strong>${doDia.length}</strong></span>
     <span>TOTAL LÍQ: <strong>${fmtInt(totalGeralLiq)} kg</strong></span>
     <span>UMID. MÉDIA: <strong>${mediaGeralUm}%</strong></span>
   `;
@@ -985,6 +1017,16 @@ function renderResumo() {
     const umColor = parseFloat(mediaUm) > 14 ? '#e67e22' : '#1a7a4a';
     const umIcon  = parseFloat(mediaUm) > 14 ? '⚠️' : '✅';
     return `<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:${umColor}">${umIcon} ${mediaUm}%</div>`;
+  };
+
+  const produtividadeHTML = (origem, liqKg) => {
+    const areaCad = origem ? db_areas[origem] : null;
+    const ha = areaCad ? parseFloat(areaCad.area) : 0;
+    if (!ha || ha <= 0) return '';
+    const kgHa = liqKg / ha;
+    const scHa = kgHa / 60; // saca padrão de 60kg
+    const fmtHa = Number(ha).toLocaleString('pt-BR', {maximumFractionDigits: 2});
+    return `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--accent)">${fmtHa} ha - ${fmt(scHa)} sc/ha</div>`;
   };
 
   const ladoHTML = (bucket, tipo, totalGeralLiq) => {
@@ -1031,6 +1073,7 @@ function renderResumo() {
           ${bucket.produto ? `<span>🌾 ${bucket.produto}</span>` : ''}
         </div>
         ${mediaUm ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:${umColor}">${umIcon} Umid. média: ${mediaUm}%</div>` : ''}
+        ${produtividadeHTML(grupo.origem, bucket.liquido)}
       </div>`;
     }
 
@@ -1042,6 +1085,7 @@ function renderResumo() {
         <div style="padding:8px 14px 6px 18px; border-bottom:1px solid var(--line); background:var(--card)">
           <div class="rc-titulo" style="font-size:12px">${titulo}</div>
           ${sub ? `<div class="rc-subtitulo">${sub}</div>` : ''}
+          ${produtividadeHTML(grupo.origem, totalLiq)}
         </div>
         <div style="display:flex">
           ${ladoHTML(grao, 'grao', totalGeralLiq)}
@@ -1179,6 +1223,41 @@ function salvarProduto() {
   if(p) { db_produtos.push(p); _lsSet('produtos', db_produtos); document.getElementById('cfg-prod-nome').value = ""; renderProdutos(); updateSelects(); }
 }
 function excluirProd(i) { db_produtos.splice(i, 1); _lsSet('produtos', db_produtos); renderProdutos(); updateSelects(); }
+
+// ─── ÁREAS (LOTES/PIVÔS) — usado para calcular produtividade no Resumo ──────
+function renderAreas() {
+  const tbody = document.querySelector('#tbl-areas tbody');
+  if (!tbody) return;
+  const nomes = Object.keys(db_areas).sort();
+  if (nomes.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--muted)">Nenhuma área cadastrada.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = nomes.map(nome => `<tr>
+    <td>${nome}</td>
+    <td style="text-align:center"><input type="number" step="0.01" min="0" value="${db_areas[nome].area ?? ''}" style="width:100px; text-align:center" onchange="db_areas['${nome}'].area=parseFloat(this.value)||0; _lsSet('areas', db_areas); renderResumo();"></td>
+    <td style="text-align:center"><button onclick="excluirArea('${nome}')" style="background:#fee; border:1.5px solid #fcc; color:red; border-radius:5px; padding:4px 9px; cursor:pointer; font-weight:700; font-size:13px">✕</button></td>
+  </tr>`).join('');
+}
+function salvarArea() {
+  const nome = document.getElementById('cfg-area-nome').value.toUpperCase().trim();
+  const ha   = parseFloat(document.getElementById('cfg-area-ha').value);
+  if (!nome) { showToast('⚠️ Informe o nome do Lote/Pivô/Talhão.'); return; }
+  if (isNaN(ha) || ha <= 0) { showToast('⚠️ Informe uma área (ha) válida.'); return; }
+  db_areas[nome] = { area: ha };
+  _lsSet('areas', db_areas);
+  document.getElementById('cfg-area-nome').value = '';
+  document.getElementById('cfg-area-ha').value = '';
+  renderAreas();
+  showToast('✅ Área salva!');
+}
+function excluirArea(nome) {
+  delete db_areas[nome];
+  _lsSet('areas', db_areas);
+  renderAreas();
+  renderResumo();
+  showToast('Área removida!');
+}
 let _pendingExcluirOrdemId = null;
 function excluirOrdem(id) {
   _pendingExcluirOrdemId = id;
@@ -1207,6 +1286,34 @@ function _confirmarExcluirOrdem() {
   renderGrafico();
   showToast("Registro excluído e sequência corrigida!");
 }
+// ─── TABELA DE REFERÊNCIA: DESCONTO POR UMIDADE (%) ──────────────────────────
+// Cada par é [umidade, desconto%]. Usada na exportação para preencher
+// automaticamente a coluna "Desc. Umi.(%)" a partir da umidade de cada ordem.
+const TABELA_DESCONTO_UMIDADE = [
+  [0.0,0.0],[12.0,0.0],[12.5,0.0],[12.6,0.0],[12.7,0.0],[12.8,0.0],[12.9,0.0],[13.0,0.0],[13.1,0.0],[13.2,0.0],[13.3,0.0],[13.4,0.0],[13.5,0.0],[13.6,0.0],[13.7,0.0],[13.8,0.0],[13.9,0.0],[14.0,0.0],[14.1,0.1],[14.2,0.2],[14.3,0.6],[14.4,0.8],[14.5,1.0],[14.6,1.0],[14.7,1.1],[14.8,1.2],[14.9,1.3],[15.0,1.7],[15.1,1.8],[15.2,1.95],[15.3,2.4],[15.4,2.5],[15.5,2.6],[15.6,2.7],[15.7,2.8],[15.8,3.3],[15.9,3.3],[16.0,3.3],[16.1,3.3],[16.2,3.3],[16.3,4.3],[16.4,4.3],[16.5,4.3],[16.6,4.3],[16.7,4.3],[16.8,5.1],[16.9,5.1],[17.0,5.1],[17.1,5.1],[17.2,5.1],[17.3,6.0],[17.4,6.0],[17.5,6.0],[17.6,6.0],[17.7,6.0],[17.8,6.9],[17.9,6.9],[18.0,6.9],[18.1,6.9],[18.2,6.9],[18.3,7.5],[18.4,7.5],[18.5,7.5],[18.6,7.5],[18.7,7.5],[18.8,8.2],[18.9,8.2],[19.0,8.2],[19.1,8.2],[19.2,8.2],[19.3,9.0],[19.4,9.0],[19.5,9.0],[19.6,9.0],[19.7,9.0],[19.8,10.0],[19.9,10.0],[20.0,10.0],[20.1,10.0],[20.2,10.0],[20.3,11.0],[20.4,11.0],[20.5,11.0],[20.6,11.0],[20.7,11.0],[20.8,12.0],[20.9,12.0],[21.0,12.0],[21.1,12.0],[21.2,12.0],[21.3,13.0],[21.4,13.0],[21.5,13.0],[21.6,13.0],[21.7,13.0],[21.8,14.0],[21.9,14.0],[22.0,14.0],[22.1,14.0],[22.2,14.0],[22.3,14.2],[22.4,14.4],[22.5,14.7],[22.6,15.0],[22.7,15.2],[22.8,15.4],[22.9,15.7],[23.0,16.0],[23.1,16.2],[23.2,16.4],[23.3,16.6],[23.4,16.8],[23.5,17.0],[23.6,17.4],[23.7,17.8],[23.8,18.2],[23.9,18.6],[24.0,19.0],[24.1,19.3],[24.2,19.6],[24.3,19.9],[24.4,20.2],[24.5,20.5],[24.6,20.8],[24.7,21.1],[24.8,21.4],[24.9,21.7],[25.0,22.0],[25.1,22.2],[25.2,22.4],[25.3,22.6],[25.4,22.8],[25.5,23.0],[25.6,23.2],[25.7,23.4],[25.8,23.6],[25.9,23.8],[26.0,24.0],[26.1,24.2],[26.2,24.4],[26.3,24.6],[26.4,24.8],[26.5,25.0],[26.6,25.2],[26.7,25.4],[26.8,25.6],[26.9,25.8],[27.0,26.0],[27.1,26.2],[27.2,26.4],[27.3,26.6],[27.4,26.8],[27.5,27.0],[27.6,27.2],[27.7,27.4],[27.8,27.6],[27.9,27.8],[28.0,28.0],[28.1,28.2],[28.2,28.4],[28.3,28.6],[28.4,28.8],[28.5,29.0],[28.6,29.2],[28.7,29.4],[28.8,29.6],[28.9,29.8],[29.0,30.0],[29.1,30.2],[29.2,30.4],[29.3,30.6],[29.4,30.8],[29.5,31.0],[29.6,31.2],[29.7,31.4],[29.8,31.6],[29.9,31.8],[30.0,32.0],[30.1,32.2],[30.2,32.4],[30.3,32.6],[30.4,32.8],[30.5,33.0],[30.6,33.2],[30.7,33.4],[30.8,33.6],[30.9,33.8],[31.0,34.0],[31.1,34.2],[31.2,34.4],[31.3,34.6],[31.4,34.8],[31.5,35.0],[31.6,35.2],[31.7,35.4],[31.8,35.6],[31.9,35.8],[32.0,36.0],[32.1,36.2],[32.2,36.4],[32.3,36.6],[32.4,36.8],[32.5,37.0],[32.6,37.2],[32.7,37.4],[32.8,37.6],[32.9,37.8],[33.0,38.0],[33.1,38.2],[33.2,38.4],[33.3,38.6],[33.4,38.8],[33.5,39.0],[33.6,39.2],[33.7,39.4],[33.8,39.6],[33.9,39.8],[34.0,40.0],[34.1,40.2],[34.2,40.4],[34.3,40.6],[34.4,40.8],[34.5,41.0],[34.6,41.2],[34.7,41.4],[34.8,41.6],[34.9,41.8],[35.0,42.0],[35.1,42.2],[35.2,42.4],[35.3,42.6],[35.4,42.8],[35.5,43.0],[35.6,43.2],[35.7,43.4],[35.8,43.6],[35.9,43.8],[36.0,44.0],[36.1,44.2],[36.2,44.4],[36.3,44.6],[36.4,44.8],[36.5,45.0],[36.6,45.2],[36.7,45.4],[36.8,45.6],[36.9,45.8],[37.0,46.0],[37.1,46.2],[37.2,46.4],[37.3,46.6],[37.4,46.8],[37.5,47.0],[37.6,47.2],[37.7,47.4],[37.8,47.6],[37.9,47.8],[38.0,48.0]
+];
+
+// Retorna o % de desconto por umidade correspondente, buscando a umidade
+// mais próxima (arredondada a 1 casa decimal) na tabela de referência.
+// Abaixo de 12% ou tabela vazia = 0. Acima de 38% usa o maior valor da tabela.
+function buscarDescontoUmidade(umidade) {
+  const um = parseFloat(umidade);
+  if (isNaN(um) || um <= 0) return 0;
+  if (um <= TABELA_DESCONTO_UMIDADE[0][0]) return TABELA_DESCONTO_UMIDADE[0][1];
+  const ultimo = TABELA_DESCONTO_UMIDADE[TABELA_DESCONTO_UMIDADE.length - 1];
+  if (um >= ultimo[0]) return ultimo[1];
+  // Procura correspondência exata (arredondada a 0.1) primeiro
+  const alvo = Math.round(um * 10) / 10;
+  const exata = TABELA_DESCONTO_UMIDADE.find(([u]) => Math.round(u * 10) / 10 === alvo);
+  if (exata) return exata[1];
+  // Caso não exista o valor exato, usa o degrau imediatamente anterior (não interpola)
+  let desconto = 0;
+  for (const [u, d] of TABELA_DESCONTO_UMIDADE) {
+    if (u <= alvo) desconto = d; else break;
+  }
+  return desconto;
+}
+
 async function exportarExcel() {
   // Definição das colunas:
   // align      = alinhamento das células de DADOS
@@ -1276,6 +1383,18 @@ async function exportarExcel() {
 
   // ── LINHAS DE DADOS ────────────────────────────────────────
   ordensOrdenadas.forEach((o, idx) => {
+    const pLiquido   = o.liquido ? Number(o.liquido) : null;
+    const impPct     = 1.0; // fixo para todas as linhas, conforme solicitado
+    const descUmiPct = buscarDescontoUmidade(o.umidade);
+
+    let descImpKg = null, descUmiKg = null, totalDesKg = null, pesoFinal = null;
+    if (pLiquido !== null) {
+      descImpKg  = Math.round(pLiquido * impPct / 100 * 100) / 100;
+      descUmiKg  = Math.round(pLiquido * descUmiPct / 100 * 100) / 100;
+      totalDesKg = Math.round((descImpKg + descUmiKg) * 100) / 100;
+      pesoFinal  = Math.round((pLiquido - totalDesKg) * 100) / 100;
+    }
+
     const rowData = {
       Data:       o.data ? o.data.split('-').reverse().join('/') : '',
       Placa:      (o.placa    || '').toUpperCase(),
@@ -1283,11 +1402,11 @@ async function exportarExcel() {
       Cultivar:   (o.cultivar || '').toUpperCase(),
       PBruto:     o.bruto   ? Number(o.bruto)   : null,
       PTara:      o.tara    ? Number(o.tara)    : null,
-      PLiquido:   o.liquido ? Number(o.liquido) : null,
-      ImpPct:     null, DescImpKg: null,
+      PLiquido:   pLiquido,
+      ImpPct:     impPct, DescImpKg: descImpKg,
       UmPct:      o.umidade ? String(o.umidade) : null,
-      DescUmiPct: null, DescUmiKg: null, TotalDesKg: null,
-      PesoFinal:  null, AcumKg:    null, Sc60: null
+      DescUmiPct: descUmiPct, DescUmiKg: descUmiKg, TotalDesKg: totalDesKg,
+      PesoFinal:  pesoFinal, AcumKg:    null, Sc60: null
     };
 
     const row = ws.addRow(rowData);
@@ -1309,6 +1428,8 @@ async function exportarExcel() {
           cell.numFmt = '#,##0';
         } else if (['ImpPct','UmPct','DescUmiPct'].includes(col.key)) {
           cell.numFmt = '0.0';
+        } else if (['DescImpKg','DescUmiKg','TotalDesKg','PesoFinal'].includes(col.key)) {
+          cell.numFmt = '#,##0.00';
         }
       }
     });
@@ -1327,247 +1448,127 @@ async function exportarExcel() {
 }
 function showToast(m) { const t = document.getElementById('toast'); t.innerText = m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2000); }
 
-// Estado do modo do gráfico
-let modoGrafico = 'cargas'; // 'cargas' | 'peso'
-function setModoGrafico(modo) {
-  modoGrafico = modo;
-  document.getElementById('btn-modo-cargas').style.background = modo === 'cargas' ? 'var(--primary)' : '#fff';
-  document.getElementById('btn-modo-cargas').style.color      = modo === 'cargas' ? '#fff' : 'var(--muted)';
-  document.getElementById('btn-modo-peso').style.background   = modo === 'peso'   ? 'var(--primary)' : '#fff';
-  document.getElementById('btn-modo-peso').style.color        = modo === 'peso'   ? '#fff' : 'var(--muted)';
-  document.getElementById('grafico-label-y').innerText = modo === 'peso' ? 'Peso Líq. (t)' : 'Nº de Cargas';
-  renderGrafico();
-}
-
-// Dados do gráfico para uso no hover
-let _graficoData = { horas: [], barW: 0, gap: 0, padL: 0, padT: 0, plotH: 0, H: 0, maxVal: 0, modo: 'cargas' };
-
 function renderGrafico() {
   const wrap = document.getElementById('grafico-fluxo-wrap');
-  if (db_ordens.length === 0) {
+  const doDia = getOrdensDoDia();
+  if (doDia.length === 0) {
     wrap.style.display = 'none';
-    // Limpa o canvas imediatamente para não mostrar dados residuais
-    const canvas = document.getElementById('grafico-fluxo');
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-    _graficoData = { horas: [], barW: 0, gap: 0, padL: 0, padT: 0, plotH: 0, H: 0, maxVal: 0, modo: modoGrafico };
+    // Limpa a área de colunas imediatamente para não mostrar dados residuais
+    const colunasEl = document.getElementById('grafico-colunas');
+    if (colunasEl) colunasEl.innerHTML = '';
+    const eixoEl = document.getElementById('grafico-eixo-y');
+    if (eixoEl) eixoEl.innerHTML = '';
     return;
   }
   wrap.style.display = 'block';
 
   // Filtro de origem
   const filtroOrigem = document.getElementById('grafico-filtro-origem')?.value || '';
-  // Atualiza opções do filtro
-  const origens = [...new Set(db_ordens.map(o => (o.origem || '').trim()).filter(Boolean))].sort();
+  // Atualiza opções do filtro (baseadas apenas no dia selecionado)
+  const origens = [...new Set(doDia.map(o => (o.origem || '').trim()).filter(Boolean))].sort();
   const sel = document.getElementById('grafico-filtro-origem');
   const selVal = sel.value;
   sel.innerHTML = '<option value="">Todos os Talhões</option>';
   origens.forEach(og => sel.innerHTML += `<option value="${og}" ${og === selVal ? 'selected' : ''}>${og}</option>`);
 
-  const ordens = filtroOrigem
-    ? db_ordens.filter(o => (o.origem || '').trim() === filtroOrigem)
-    : db_ordens;
+  const ordensFiltradas = filtroOrigem
+    ? doDia.filter(o => (o.origem || '').trim() === filtroOrigem)
+    : doDia;
 
-  // Acumula por hora
-  const horas = new Array(24).fill(0);
-  const pesos = new Array(24).fill(0);
-  ordens.forEach(o => {
-    if (o.hora) {
-      const h = parseInt(o.hora.split(':')[0]);
-      if (!isNaN(h) && h >= 0 && h < 24) {
-        horas[h]++;
-        pesos[h] += parseFloat(o.liquido) || 0;
-      }
+  // Monta 1 coluna por caminhão, ordenado por horário de chegada
+  const colunas = ordensFiltradas
+    .map(o => {
+      const partes = (o.hora || '00:00').split(':');
+      const h = parseInt(partes[0]) || 0;
+      const m = parseInt(partes[1]) || 0;
+      return {
+        hDecimal: h + (m / 60),
+        hora: o.hora || '--:--',
+        placa: o.placa || '—',
+        motorista: o.motorista || '',
+        pesoKg: parseFloat(o.liquido) || 0,
+        origem: o.origem || ''
+      };
+    })
+    .sort((a, b) => a.hDecimal - b.hDecimal);
+
+  if (colunas.length === 0) {
+    wrap.style.display = 'none';
+    return;
+  }
+
+  const pesosTon = colunas.map(c => c.pesoKg / 1000);
+  const maxPeso  = Math.max(...pesosTon, 0.001);
+  const minPeso  = Math.min(...pesosTon);
+  const idxMaior = pesosTon.indexOf(Math.max(...pesosTon));
+  const idxMenor = pesosTon.indexOf(minPeso);
+  // Só destaca "menor carga" se houver variação real entre as cargas do dia
+  const destacarMenor = colunas.length > 1 && maxPeso !== minPeso;
+  const primeiraHora = colunas[0].hora;
+  const ultimaHora   = colunas[colunas.length - 1].hora;
+
+  // Tempo médio entre a chegada de uma carga e a próxima
+  let tempoMedioTxt = '—';
+  if (colunas.length > 1) {
+    let somaDiffMin = 0;
+    for (let i = 1; i < colunas.length; i++) {
+      let diffH = colunas[i].hDecimal - colunas[i - 1].hDecimal;
+      if (diffH < 0) diffH += 24; // segurança para virada de dia
+      somaDiffMin += diffH * 60;
     }
-  });
-
-  const dados   = modoGrafico === 'peso' ? pesos.map(v => v / 1000) : horas; // toneladas se peso
-  const maxVal  = Math.max(...dados, 0.001);
-  const horaPico = dados.indexOf(Math.max(...dados));
-  const totalDia = modoGrafico === 'peso'
-    ? (dados.reduce((s,v)=>s+v,0)).toFixed(1) + ' t'
-    : ordens.length + ' carg' + (ordens.length !== 1 ? 'as' : 'a');
-  const horasAtivas = dados.filter(v => v > 0).length;
-  const media = horasAtivas > 0 ? (dados.reduce((s,v)=>s+v,0) / horasAtivas) : 0;
+    const mediaMin = somaDiffMin / (colunas.length - 1);
+    if (mediaMin >= 60) {
+      const h = Math.floor(mediaMin / 60);
+      const m = Math.round(mediaMin % 60);
+      tempoMedioTxt = `${h}h${m > 0 ? ' ' + m + 'min' : ''}`;
+    } else {
+      tempoMedioTxt = `${Math.round(mediaMin)} min`;
+    }
+  }
 
   document.getElementById('grafico-subtitulo').innerHTML =
-    `🔝 Pico: <strong>${String(horaPico).padStart(2,'0')}h–${String(horaPico+1).padStart(2,'0')}h</strong> &nbsp;|&nbsp; Total: <strong>${totalDia}</strong>` +
+    `Tempo médio entre cargas: <strong>${tempoMedioTxt}</strong>` +
+    ` &nbsp;|&nbsp; Das <strong>${primeiraHora}</strong> às <strong>${ultimaHora}</strong>` +
     (filtroOrigem ? ` &nbsp;|&nbsp; Talhão: <strong>${filtroOrigem}</strong>` : '');
 
-  const canvas = document.getElementById('grafico-fluxo');
-  const ctx    = canvas.getContext('2d');
-  const dpr    = Math.max(window.devicePixelRatio || 1, 2); // mínimo 2x para nitidez
-  const container = canvas.parentElement;
-  const W      = container.clientWidth || container.offsetWidth || 900;
-  const H      = 160;
-  canvas.style.width  = W + 'px';
-  canvas.style.height = H + 'px';
-  canvas.width  = Math.round(W  * dpr);
-  canvas.height = Math.round(H * dpr);
-  ctx.setTransform(1, 0, 0, 1, 0, 0); // reset antes de escalar
-  ctx.scale(dpr, dpr);
-  ctx.imageSmoothingEnabled = false;
+  // ── Renderização em HTML/CSS: peso, placa e horário sempre visíveis, sem hover ──
+  // Suporta até 100+ caminhões/dia: a área rola horizontalmente quando não cabe tudo.
+  const PLOT_H = 190; // altura da área de barras (px)
 
-  const padL = 8, padR = 6, padT = 20, padB = 28;
-  const plotW = W - padL - padR;
-  const plotH = H - padT - padB;
-  const gap   = 2;
-  const barW  = Math.max(4, plotW / 24 - gap);
+  // Escala do eixo Y (peso), com 5 marcações fixas: 100%, 75%, 50%, 25%, 0
+  const eixoY = document.getElementById('grafico-eixo-y');
+  eixoY.innerHTML = [1, 0.75, 0.5, 0.25, 0]
+    .map(f => `<span>${(maxPeso * f).toFixed(1)}t</span>`)
+    .join('');
 
-  // Salva dados para hover
-  _graficoData = { horas: dados, barW, gap, padL, padT, plotH, H, maxVal, modo: modoGrafico };
+  const colunasEl = document.getElementById('grafico-colunas');
+  colunasEl.innerHTML = colunas.map((c, i) => {
+    const t = pesosTon[i];
+    const isMaior = i === idxMaior;
+    const isMenor = destacarMenor && i === idxMenor;
+    const barH = Math.max(6, (t / maxPeso) * PLOT_H);
+    let corBarra = 'linear-gradient(#c9d0dd,#adb6c8)';   // cinza claro (padrão)
+    let corPeso  = 'var(--primary)';
+    if (isMaior) { corBarra = 'linear-gradient(#4a90d9,#2952a3)'; corPeso = '#2952a3'; } // azul
+    else if (isMenor) { corBarra = 'linear-gradient(#f0958a,#e0685c)'; corPeso = '#c0392b'; } // vermelho claro
 
-  ctx.clearRect(0, 0, W, H);
-
-  // Fundo zebrado leve por bloco de 3h
-  for (let h = 0; h < 24; h += 6) {
-    const x = padL + h * (barW + gap);
-    const w = 3 * (barW + gap);
-    ctx.fillStyle = 'rgba(240,242,245,0.6)';
-    ctx.fillRect(x, padT, w, plotH);
-  }
-
-  // Linhas de grade horizontais
-  const steps = 4;
-  for (let g = 0; g <= steps; g++) {
-    const val = (maxVal / steps) * g;
-    const y   = padT + plotH - (g / steps) * plotH;
-    ctx.strokeStyle = g === 0 ? '#c8d0e0' : '#e8ecf3';
-    ctx.lineWidth   = g === 0 ? 1.5 : 1;
-    ctx.setLineDash(g === 0 ? [] : [4, 4]);
-    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
-    ctx.setLineDash([]);
-    if (g > 0) {
-      ctx.fillStyle = '#9aaabb';
-      ctx.font = `600 8px IBM Plex Mono, monospace`;
-      ctx.textAlign = 'right';
-      const label = modoGrafico === 'peso' ? val.toFixed(1) : Math.round(val);
-      ctx.fillText(label, padL - 2, y + 3);
-    }
-  }
-
-  // Linha de média (verde pontilhada)
-  if (horasAtivas > 0) {
-    const yMedia = padT + plotH - (media / maxVal) * plotH;
-    ctx.strokeStyle = '#1a7a4a';
-    ctx.lineWidth   = 1.5;
-    ctx.setLineDash([5, 5]);
-    ctx.beginPath(); ctx.moveTo(padL, yMedia); ctx.lineTo(W - padR, yMedia); ctx.stroke();
-    ctx.setLineDash([]);
-    // label da média
-    ctx.fillStyle = '#1a7a4a';
-    ctx.font = 'bold 8px IBM Plex Sans, monospace';
-    ctx.textAlign = 'left';
-    const mediaLabel = modoGrafico === 'peso' ? media.toFixed(1) + 't' : '⌀' + media.toFixed(1);
-    ctx.fillText(mediaLabel, W - padR - 30, yMedia - 3);
-  }
-
-  // Barras
-  dados.forEach((val, h) => {
-    const x      = padL + h * (barW + gap);
-    const isPico = h === horaPico && val > 0;
-
-    if (val === 0) {
-      ctx.fillStyle = '#edf0f5';
-      ctx.fillRect(x, padT + plotH - 2, barW, 2);
-      return;
-    }
-
-    const barH = Math.max(4, (val / maxVal) * plotH);
-    const y    = padT + plotH - barH;
-    const r    = Math.min(4, barW / 2);
-
-    const grad = ctx.createLinearGradient(x, y, x, padT + plotH);
-    if (isPico) {
-      grad.addColorStop(0, '#e67e22');
-      grad.addColorStop(1, '#f39c12');
-    } else {
-      grad.addColorStop(0, '#2952a3');
-      grad.addColorStop(1, '#6fa8dc');
-    }
-    ctx.fillStyle = grad;
-
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + barW - r, y);
-    ctx.quadraticCurveTo(x + barW, y, x + barW, y + r);
-    ctx.lineTo(x + barW, padT + plotH);
-    ctx.lineTo(x, padT + plotH);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.fill();
-
-    // Rótulo apenas para pico ou valores altos (≥ max*0.6) — evita poluição
-    if (isPico || val >= maxVal * 0.6) {
-      ctx.fillStyle = isPico ? '#c0392b' : '#1a2744';
-      ctx.font = `bold ${isPico ? 10 : 9}px IBM Plex Mono, monospace`;
-      ctx.textAlign = 'center';
-      const lbl = modoGrafico === 'peso' ? val.toFixed(1) : val;
-      ctx.fillText(lbl, x + barW / 2, y - 4);
-    }
-  });
-
-  // Labels eixo X (a cada 3h)
-  ctx.fillStyle = '#6b7a99';
-  ctx.font = '9px IBM Plex Sans, sans-serif';
-  ctx.textAlign = 'center';
-  for (let h = 0; h <= 21; h += 3) {
-    const x = padL + h * (barW + gap) + barW / 2;
-    ctx.fillText(String(h).padStart(2,'0') + 'h', x, H - 10);
-  }
-
-  // Linha de base
-  ctx.strokeStyle = '#c8d0e0';
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([]);
-  ctx.beginPath();
-  ctx.moveTo(padL, padT + plotH);
-  ctx.lineTo(W - padR, padT + plotH);
-  ctx.stroke();
+    return `
+      <div style="grid-row:1; height:100%; width:100%; display:flex; flex-direction:column; justify-content:flex-end; align-items:center;">
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:800; color:${corPeso}; margin-bottom:3px; white-space:nowrap;">${t.toFixed(2)} t</div>
+        <div title="${c.placa} • ${t.toFixed(2)} t • ${c.hora}" style="width:32px; height:${barH}px; border-radius:6px 6px 2px 2px; background:${corBarra}; box-shadow: inset 0 -2px 4px rgba(0,0,0,0.08);"></div>
+      </div>
+      <div style="grid-row:2; display:flex; flex-direction:column; align-items:center; gap:2px; padding-top:7px;">
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:800; color:var(--primary); white-space:nowrap; background:var(--input-bg); border:1px solid var(--line); border-radius:4px; padding:2px 6px;">${c.placa}</div>
+        <div style="font-size:9.5px; color:var(--muted); white-space:nowrap;">${c.hora}</div>
+        ${c.motorista ? `<div style="font-size:8.5px; color:var(--muted); max-width:78px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${c.motorista}</div>` : ''}
+      </div>`;
+  }).join('');
 }
-
-// Hover tooltip no canvas
-(function setupGraficoTooltip() {
-  document.addEventListener('DOMContentLoaded', () => {});
-  // Usa delegação após render
-  document.body.addEventListener('mousemove', function(e) {
-    const canvas = document.getElementById('grafico-fluxo');
-    const tooltip = document.getElementById('grafico-tooltip');
-    if (!canvas || !tooltip) return;
-    const rect = canvas.getBoundingClientRect();
-    if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
-      tooltip.style.display = 'none'; return;
-    }
-    const mx = e.clientX - rect.left;
-    const { horas, barW, gap, padL, padT, plotH, H, modo } = _graficoData;
-    for (let h = 0; h < 24; h++) {
-      const x = padL + h * (barW + gap);
-      if (mx >= x && mx <= x + barW) {
-        const val = horas[h];
-        if (val === 0) { tooltip.style.display = 'none'; return; }
-        const label = modo === 'peso'
-          ? `${String(h).padStart(2,'0')}h–${String(h+1).padStart(2,'0')}h: ${val.toFixed(1)} t`
-          : `${String(h).padStart(2,'0')}h–${String(h+1).padStart(2,'0')}h: ${val} carga${val !== 1 ? 's' : ''}`;
-        tooltip.innerText = label;
-        tooltip.style.display = 'block';
-        tooltip.style.left = (e.clientX + 12) + 'px';
-        tooltip.style.top  = (e.clientY - 28) + 'px';
-        return;
-      }
-    }
-    tooltip.style.display = 'none';
-  });
-  document.body.addEventListener('mouseleave', () => {
-    const t = document.getElementById('grafico-tooltip');
-    if (t) t.style.display = 'none';
-  });
-})();
 
 function init() {
   const n = new Date();
   document.getElementById('f-data').valueAsDate = n;
+  document.getElementById('filtro-data-historico').valueAsDate = n;
   document.getElementById('f-hora').value = String(n.getHours()).padStart(2,'0') + ':' + String(n.getMinutes()).padStart(2,'0');
   document.getElementById('badge-num').innerText = "#" + String(contador).padStart(4,'0');
   document.getElementById('f-peso').value = ""; document.getElementById('f-um').value = ""; document.getElementById('f-placa').value = ""; document.getElementById('f-motorista').value = "";
