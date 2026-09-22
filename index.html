@@ -217,9 +217,20 @@
     padding: 9px 13px; font-size: 13px; cursor: pointer;
     font-family: 'IBM Plex Mono', monospace; text-transform: uppercase;
     border-bottom: 1px solid var(--line); transition: background 0.1s;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
   }
   .combo-item:last-child { border-bottom: none; }
   .combo-item:hover, .combo-item.selected { background: var(--accent2); color: #fff; }
+  .combo-item-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .combo-item-del {
+    flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 700;
+    color: var(--muted); background: rgba(0,0,0,0.06); cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .combo-item:hover .combo-item-del { color: #fff; background: rgba(255,255,255,0.18); }
+  .combo-item-del:hover { background: var(--danger) !important; color: #fff !important; }
   .combo-empty { padding: 10px 13px; font-size: 12px; color: var(--muted); font-style: italic; }
 
   /* Inputs editáveis na tabela de frota (tara, origem, cultivar) */
@@ -411,7 +422,7 @@
           <div class="field">
             <label>Origem</label>
             <div class="combo-wrap" id="combo-wrap-origem">
-              <input type="text" id="f-origem" style="text-transform:uppercase" autocomplete="off" oninput="sync(); _comboFilter('origem')" onfocus="_comboFocus('origem')" onblur="_comboBlur('origem')" placeholder="Digite ou selecione...">
+              <input type="text" id="f-origem" style="text-transform:uppercase" autocomplete="off" oninput="sync(); _comboFilter('origem')" onfocus="_comboFocus('origem')" onblur="_comboBlur('origem'); _salvarUltimaOrigemCultivar()" placeholder="Digite ou selecione...">
               <button type="button" class="combo-arrow" onmousedown="event.preventDefault(); _comboToggle('origem')" tabindex="-1">&#9660;</button>
               <div class="combo-list" id="combo-list-origem"></div>
             </div>
@@ -419,7 +430,7 @@
           <div class="field">
             <label>Cultivar</label>
             <div class="combo-wrap" id="combo-wrap-cultivar">
-              <input type="text" id="f-cultivar" style="text-transform:uppercase" autocomplete="off" oninput="if(document.getElementById('f-semente').checked) onSementeChange(); sync(); _comboFilter('cultivar')" onfocus="_comboFocus('cultivar')" onblur="_comboBlur('cultivar')" placeholder="Digite ou selecione...">
+              <input type="text" id="f-cultivar" style="text-transform:uppercase" autocomplete="off" oninput="if(document.getElementById('f-semente').checked) onSementeChange(); sync(); _comboFilter('cultivar')" onfocus="_comboFocus('cultivar')" onblur="_comboBlur('cultivar'); _salvarUltimaOrigemCultivar()" placeholder="Digite ou selecione...">
               <button type="button" class="combo-arrow" onmousedown="event.preventDefault(); _comboToggle('cultivar')" tabindex="-1">&#9660;</button>
               <div class="combo-list" id="combo-list-cultivar"></div>
             </div>
@@ -641,6 +652,10 @@ let db_frota    = _lsGet(VERSAO_ATUAL + 'frota',    {});
 let db_ordens   = _lsGet(VERSAO_ATUAL + 'ordens',   []);
 let db_produtos = _lsGet(VERSAO_ATUAL + 'produtos', ['SOJA', 'MILHO']);
 let db_areas    = _lsGet(VERSAO_ATUAL + 'areas',    {});
+let db_origens_removidas    = _lsGet(VERSAO_ATUAL + 'origens_removidas',    []);
+let db_cultivares_removidas = _lsGet(VERSAO_ATUAL + 'cultivares_removidas', []);
+let db_ultima_origem    = _lsGet(VERSAO_ATUAL + 'ultima_origem',    '');
+let db_ultima_cultivar  = _lsGet(VERSAO_ATUAL + 'ultima_cultivar',  '');
 let contador    = parseInt(localStorage.getItem(VERSAO_ATUAL + 'contador')) || 1;
 let currentEditId = null;
 
@@ -679,12 +694,25 @@ function _comboRender(id, filter) {
     list.innerHTML = '<div class="combo-empty">Nenhum registro encontrado</div>';
   } else {
     list.innerHTML = items.map(v =>
-      `<div class="combo-item${v === input.value.toUpperCase() ? ' selected' : ''}"
-            onmousedown="event.preventDefault(); _comboSelect('${id}', '${v.replace(/'/g,"\\'")}')">
-        ${v}
+      `<div class="combo-item${v === input.value.toUpperCase() ? ' selected' : ''}">
+        <span class="combo-item-text"
+              onmousedown="event.preventDefault(); _comboSelect('${id}', '${v.replace(/'/g,"\\'")}')">${v}</span>
+        <span class="combo-item-del" title="Remover da lista"
+              onmousedown="event.preventDefault(); event.stopPropagation(); _comboDeleteItem('${id}', '${v.replace(/'/g,"\\'")}')">&times;</span>
       </div>`
     ).join('');
   }
+}
+
+function _comboDeleteItem(id, value) {
+  const label = id === 'origem' ? 'Origem' : 'Cultivar';
+  if (!confirm(`Remover "${value}" da lista de sugestões de ${label}?\n\n(Os lançamentos já salvos com esse valor não serão alterados.)`)) return;
+  const key  = id === 'origem' ? 'origens_removidas' : 'cultivares_removidas';
+  const list = id === 'origem' ? db_origens_removidas : db_cultivares_removidas;
+  if (!list.includes(value)) list.push(value);
+  _lsSet(key, list);
+  updateSelects();
+  _comboRender(id, '');
 }
 
 function _comboSelect(id, value) {
@@ -693,6 +721,15 @@ function _comboSelect(id, value) {
   _comboClose(id);
   if (id === 'cultivar' && document.getElementById('f-semente').checked) onSementeChange();
   sync();
+  _salvarUltimaOrigemCultivar();
+}
+
+// Guarda a última Origem/Cultivar escolhida, para persistir entre placas e recarregamentos da página
+function _salvarUltimaOrigemCultivar() {
+  db_ultima_origem   = document.getElementById('f-origem').value;
+  db_ultima_cultivar = document.getElementById('f-cultivar').value;
+  _lsSet('ultima_origem',   db_ultima_origem);
+  _lsSet('ultima_cultivar', db_ultima_cultivar);
 }
 
 function _comboOpen(id) {
@@ -749,8 +786,8 @@ function updateSelects() {
   sr.innerHTML = '<option value="">Selecione...</option>';
   db_produtos.sort().forEach(p => sr.innerHTML += `<option value="${p}" ${p === currPr ? 'selected' : ''}>${p}</option>`);
 
-  const origens   = [...new Set(db_ordens.map(o => o.origem).filter(Boolean))].sort();
-  const cultivares = [...new Set(db_ordens.map(o => o.cultivar).filter(Boolean))].sort();
+  const origens   = [...new Set(db_ordens.map(o => o.origem).filter(Boolean))].filter(v => !db_origens_removidas.includes(v)).sort();
+  const cultivares = [...new Set(db_ordens.map(o => o.cultivar).filter(Boolean))].filter(v => !db_cultivares_removidas.includes(v)).sort();
   _comboSetData('origem',   origens);
   _comboSetData('cultivar', cultivares);
 }
@@ -785,11 +822,8 @@ function onPlacaChange() {
   const p = document.getElementById('f-placa').value;
   const veiculo = db_frota[p] || {};
   document.getElementById('f-motorista').value = veiculo.motorista || '';
-  // Preenche Origem e Cultivar só se a frota tiver valor cadastrado
-  if (veiculo.origem)   document.getElementById('f-origem').value   = veiculo.origem;
-  else                  document.getElementById('f-origem').value   = '';
-  if (veiculo.cultivar) document.getElementById('f-cultivar').value = veiculo.cultivar;
-  else                  document.getElementById('f-cultivar').value = '';
+  // Origem e Cultivar não são mais trocadas pela placa: mantém a última escolha feita pelo usuário,
+  // e só muda quando ele mesmo digitar/selecionar um novo valor.
   const n = new Date();
   document.getElementById('f-hora').value = String(n.getHours()).padStart(2,'0') + ':' + String(n.getMinutes()).padStart(2,'0');
   sync();
@@ -1574,6 +1608,9 @@ function init() {
   document.getElementById('f-peso').value = ""; document.getElementById('f-um').value = ""; document.getElementById('f-placa').value = ""; document.getElementById('f-motorista').value = "";
   document.getElementById('f-obs').value = ""; document.getElementById('f-obs').readOnly = false; document.getElementById('f-obs').style.background = '';
   document.getElementById('f-semente').checked = false;
+  // Restaura a última Origem/Cultivar escolhida (independente de placa)
+  document.getElementById('f-origem').value   = db_ultima_origem;
+  document.getElementById('f-cultivar').value = db_ultima_cultivar;
   updateSelects(); sync();
   // Atualiza gráfico se a aba histórico estiver visível
   if (document.getElementById('tab-historico').classList.contains('active')) renderGrafico();
