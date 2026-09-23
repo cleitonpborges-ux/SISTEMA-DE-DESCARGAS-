@@ -517,6 +517,11 @@
           <button onclick="document.getElementById('hist-busca').value=''; renderHistorico();" style="background:none; border:none; color:var(--muted); font-size:16px; cursor:pointer; line-height:1; padding:0;" title="Limpar busca">✕</button>
         </div>
         <button class="btn" style="white-space:nowrap; width:auto; font-size:12px; background:#fff; border:1.5px solid var(--primary); color:var(--primary); padding:9px 14px;" onclick="exportarExcel()">📊 Exportar Excel</button>
+        <button id="btn-planilha-auto" class="btn" style="white-space:nowrap; width:auto; font-size:12px; background:#fff; border:1.5px solid var(--primary); color:var(--primary); padding:9px 14px;" onclick="conectarPlanilhaAutomatica()">🔗 Vincular Planilha Automática</button>
+      </div>
+      <div id="status-planilha-auto" style="margin-top:6px; font-size:11px; color:var(--muted); text-align:right;"></div>
+      <div id="aviso-planilha-pendente" style="display:none; margin-top:8px; padding:10px 12px; background:#fff4e5; border:1.5px solid #e0a53c; border-radius:6px; font-size:13px; font-weight:700; color:#7a4a00; text-align:center;">
+        ⚠️ PLANILHA ABERTA — POR FAVOR FECHE PARA LANÇAMENTO DOS DADOS!
       </div>
     </div>
 
@@ -658,6 +663,8 @@ let db_ultima_origem    = _lsGet(VERSAO_ATUAL + 'ultima_origem',    '');
 let db_ultima_cultivar  = _lsGet(VERSAO_ATUAL + 'ultima_cultivar',  '');
 let contador    = parseInt(localStorage.getItem(VERSAO_ATUAL + 'contador')) || 1;
 let currentEditId = null;
+let planilhaHandle = null; // referência ao arquivo .xlsx vinculado (aba ENTRADA)
+let filaPendentePlanilha = _lsGet(VERSAO_ATUAL + 'filaPendentePlanilha', []); // registros aguardando gravação no arquivo
 
 function fmt(num) { if (!num || isNaN(num)) return ""; return Number(num).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
 function fmtInt(num) { return Number(num).toLocaleString('pt-BR', {minimumFractionDigits: 0, maximumFractionDigits: 0}); }
@@ -845,7 +852,7 @@ function onSementeChange() {
   sync();
 }
 
-function salvarEImprimir() {
+async function salvarEImprimir() {
   const p = document.getElementById('f-placa').value;
   if(!p) return showToast("Selecione a Placa!");
   const bruto = parseFloat(document.getElementById('f-peso').value) || 0;
@@ -865,6 +872,7 @@ function salvarEImprimir() {
 
   db_ordens.unshift(o);
   _lsSet('ordens', db_ordens);
+  await salvarNaPlanilhaAutomatica(o);
 
   window.print();
   setTimeout(() => {
@@ -1348,6 +1356,249 @@ function buscarDescontoUmidade(umidade) {
   return desconto;
 }
 
+// ══════════════════════════════════════════════════════════════════
+// GRAVAÇÃO AUTOMÁTICA NA PLANILHA "ENTRADA" (arquivo real do usuário)
+// ══════════════════════════════════════════════════════════════════
+// Estratégia: a cada descarga registrada, abrimos o arquivo .xlsx
+// vinculado, localizamos a próxima linha vazia da aba ENTRADA
+// (a partir da linha 4) e preenchemos APENAS as colunas de entrada
+// manual (Data, Placa, Fazenda-Talhão, Cultivar, P.Bruto, P.Tara,
+// Imp.%, Um.%, Obs). As fórmulas das demais colunas (P.Líquido,
+// Descontos, Peso Final, Acumulado, Sc/60) já existem pré-preenchidas
+// no arquivo até a linha 422 e são preservadas — nunca sobrescritas.
+
+function _idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('sistema_descargas_planilha', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('handles');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function _idbSet(key, val) {
+  const db = await _idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('handles', 'readwrite');
+    tx.objectStore('handles').put(val, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+async function _idbGet(key) {
+  const db = await _idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('handles', 'readonly');
+    const req = tx.objectStore('handles').get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function _statusPlanilha(msg, ok) {
+  const el = document.getElementById('status-planilha-auto');
+  if (!el) return;
+  el.innerText = msg;
+  el.style.color = ok ? '#1a7a4a' : 'var(--muted)';
+}
+
+// Chamado ao carregar a página: tenta restaurar a conexão salva anteriormente
+async function restaurarPlanilhaAutomatica() {
+  if (!('showOpenFilePicker' in window)) {
+    _statusPlanilha('Gravação automática indisponível neste navegador (use Chrome/Edge).', false);
+    return;
+  }
+  try {
+    const handle = await _idbGet('planilhaEntradaHandle');
+    if (!handle) { _statusPlanilha('Nenhuma planilha vinculada ainda.', false); return; }
+    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    if (perm === 'granted') {
+      planilhaHandle = handle;
+      _statusPlanilha('📄 Planilha conectada: ' + handle.name, true);
+      processarFilaPlanilha(); // se houver pendências de sessões anteriores, tenta agora
+    } else {
+      planilhaHandle = handle;
+      _statusPlanilha('⚠️ Clique em "Vincular Planilha Automática" para reconceder acesso a: ' + handle.name, false);
+    }
+  } catch (e) {
+    _statusPlanilha('Nenhuma planilha vinculada ainda.', false);
+  }
+}
+
+// Botão: conecta (ou reconecta) o arquivo .xlsx real do usuário
+async function conectarPlanilhaAutomatica() {
+  if (!('showOpenFilePicker' in window)) {
+    showToast('Seu navegador não suporta esse recurso. Use Chrome ou Edge.');
+    return;
+  }
+  try {
+    // Tenta reaproveitar o arquivo já vinculado antes, só pedindo permissão de novo
+    const handleSalvo = await _idbGet('planilhaEntradaHandle').catch(() => null);
+    if (handleSalvo) {
+      const perm = await handleSalvo.requestPermission({ mode: 'readwrite' });
+      if (perm === 'granted') {
+        planilhaHandle = handleSalvo;
+        _statusPlanilha('📄 Planilha conectada: ' + handleSalvo.name, true);
+        showToast('Planilha reconectada!');
+        processarFilaPlanilha();
+        return;
+      }
+    }
+    // Sem arquivo salvo (ou permissão negada): abre o seletor para escolher o .xlsx
+    const [novoHandle] = await window.showOpenFilePicker({
+      types: [{ description: 'Planilha Excel', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }],
+      multiple: false
+    });
+    const perm2 = await novoHandle.requestPermission({ mode: 'readwrite' });
+    if (perm2 !== 'granted') { showToast('Permissão negada para editar o arquivo.'); return; }
+    planilhaHandle = novoHandle;
+    await _idbSet('planilhaEntradaHandle', novoHandle);
+    _statusPlanilha('📄 Planilha conectada: ' + novoHandle.name, true);
+    showToast('Planilha vinculada com sucesso!');
+    processarFilaPlanilha();
+  } catch (e) {
+    if (e.name !== 'AbortError') { console.error(e); showToast('Não foi possível conectar a planilha.'); }
+  }
+}
+
+// Grava a ordem "o" na próxima linha vazia da aba ENTRADA do arquivo vinculado
+// Escreve uma lista de ordens (na ordem em que foram registradas) na aba
+// ENTRADA do arquivo, começando na primeira linha vazia. Lança erro se não
+// conseguir (ex: arquivo aberto/bloqueado no Excel) — nesse caso NENHUMA
+// escrita é feita (o arquivo original não é tocado) e a fila permanece intacta.
+async function _escreverOrdensNaPlanilha(ordens) {
+  const file    = await planilhaHandle.getFile();
+  const buffer  = await file.arrayBuffer();
+  const wb      = new ExcelJS.Workbook();
+  await wb.xlsx.load(buffer);
+  const ws = wb.getWorksheet('ENTRADA');
+  if (!ws) throw new Error('Aba "ENTRADA" não encontrada no arquivo vinculado.');
+
+  // Localiza a primeira linha vazia (coluna B = Data), a partir da linha 4
+  let r = 4;
+  while (ws.getCell(r, 2).value !== null && ws.getCell(r, 2).value !== undefined && ws.getCell(r, 2).value !== '') {
+    r++;
+  }
+
+  for (const o of ordens) {
+    // As colunas H, J, L, M, N, O, P, Q já têm fórmulas prontas no arquivo
+    // (pré-preenchidas até a linha 422). Só preenchemos os dados brutos de
+    // entrada e deixamos essas fórmulas originais intactas — elas recalculam
+    // sozinhas assim que o Excel sai do Modo de Exibição Protegido
+    // ("Habilitar Edição").
+    const jaTemFormulas = !!(ws.getCell(r, 8).formula || ws.getCell(r, 8).value); // coluna H
+
+    const [ano, mes, dia] = o.data.split('-').map(Number);
+    const [horaReg, minReg] = (o.hora || '00:00').split(':').map(Number);
+    // Date.UTC evita o bug de fuso horário (Bahia é UTC-3, então
+    // "new Date(ano,mes,dia)" local viraria 03:00 ao ser gravado no Excel).
+    // A célula continua formatada para mostrar só a data — a hora do
+    // lançamento fica guardada nela, visível ao clicar na célula.
+    const dataExcel = new Date(Date.UTC(ano, mes - 1, dia, horaReg || 0, minReg || 0, 0));
+
+    ws.getCell(r, 2).value  = dataExcel;                          // B - Data
+    ws.getCell(r, 3).value  = (o.placa || '').toUpperCase();      // C - Placa
+    ws.getCell(r, 4).value  = (o.origem || '').toUpperCase();     // D - Fazenda - Talhão
+    ws.getCell(r, 5).value  = (o.cultivar || '').toUpperCase();   // E - Cultivar
+    ws.getCell(r, 6).value  = Number(o.bruto) || 0;               // F - P. Bruto
+    ws.getCell(r, 7).value  = Number(o.tara) || 0;                // G - P. Tara
+    ws.getCell(r, 9).value  = 1;                                  // I - Imp. (%) fixo
+    ws.getCell(r, 11).value = parseFloat(o.umidade) || 0;         // K - Um. (%)
+    ws.getCell(r, 18).value = (o.obs || '').toUpperCase();        // R - Obs
+
+    // Se a linha passou do limite pré-formatado do arquivo (>422), recria as
+    // fórmulas e a formatação manualmente, copiando da linha anterior
+    if (!jaTemFormulas) {
+      const linhaAnterior = ws.getRow(r - 1);
+      linhaAnterior.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        ws.getRow(r).getCell(colNumber).style = cell.style;
+      });
+      ws.getCell(r, 8).value  = { formula: `F${r}-G${r}` };
+      ws.getCell(r, 10).value = { formula: `(H${r}*I${r})/100` };
+      ws.getCell(r, 12).value = { formula: `VLOOKUP(K${r}, 'TABELA-DESC.-ML'!$C$8:$E$299, 3, TRUE)` };
+      ws.getCell(r, 13).value = { formula: `H${r}*(L${r}/100)` };
+      ws.getCell(r, 14).value = { formula: `J${r}+M${r}` };
+      ws.getCell(r, 15).value = { formula: `H${r}-N${r}` };
+      ws.getCell(r, 16).value = { formula: `P${r - 1}+O${r}` };
+      ws.getCell(r, 17).value = { formula: `P${r}/60` };
+      // reaplica os valores de entrada (a cópia de estilo acima não mexe em value)
+      ws.getCell(r, 2).value  = dataExcel;
+      ws.getCell(r, 3).value  = (o.placa || '').toUpperCase();
+      ws.getCell(r, 4).value  = (o.origem || '').toUpperCase();
+      ws.getCell(r, 5).value  = (o.cultivar || '').toUpperCase();
+      ws.getCell(r, 6).value  = Number(o.bruto) || 0;
+      ws.getCell(r, 7).value  = Number(o.tara) || 0;
+      ws.getCell(r, 9).value  = 1;
+      ws.getCell(r, 11).value = parseFloat(o.umidade) || 0;
+      ws.getCell(r, 18).value = (o.obs || '').toUpperCase();
+    }
+    r++;
+  }
+
+  // Força o Excel a recalcular tudo assim que "Habilitar Edição" for clicado
+  wb.calcProperties = wb.calcProperties || {};
+  wb.calcProperties.fullCalcOnLoad = true;
+
+  const novoBuffer = await wb.xlsx.writeBuffer();
+  const writable    = await planilhaHandle.createWritable();
+  await writable.write(novoBuffer);
+  await writable.close();
+}
+
+function _mostrarAvisoPendencia() {
+  const banner = document.getElementById('aviso-planilha-pendente');
+  if (!banner) return;
+  banner.style.display = 'block';
+}
+function _esconderAvisoPendencia() {
+  const banner = document.getElementById('aviso-planilha-pendente');
+  if (banner) banner.style.display = 'none';
+}
+
+// Coloca uma ordem na fila (persistida) e tenta gravar imediatamente
+async function salvarNaPlanilhaAutomatica(o) {
+  if (!planilhaHandle) return; // nada vinculado ainda — ignora silenciosamente
+  filaPendentePlanilha.push(o);
+  _lsSet('filaPendentePlanilha', filaPendentePlanilha);
+  await processarFilaPlanilha();
+}
+
+// Tenta gravar TODOS os registros pendentes de uma vez, na ordem correta.
+// Chamada automaticamente (ao registrar, ao voltar para a aba, periodicamente)
+// e também pelo botão "Tentar Agora" do aviso.
+let _gravandoFila = false;
+async function processarFilaPlanilha() {
+  if (_gravandoFila) return; // evita chamadas concorrentes
+  if (!planilhaHandle || filaPendentePlanilha.length === 0) {
+    if (filaPendentePlanilha.length === 0) _esconderAvisoPendencia();
+    return;
+  }
+  _gravandoFila = true;
+  try {
+    const perm = await planilhaHandle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') {
+      _mostrarAvisoPendencia();
+      _statusPlanilha('⚠️ Permissão de acesso perdida. Clique em "Vincular Planilha Automática".', false);
+      return;
+    }
+
+    const qtd = filaPendentePlanilha.length;
+    await _escreverOrdensNaPlanilha(filaPendentePlanilha);
+
+    // Sucesso: esvazia a fila
+    filaPendentePlanilha = [];
+    _lsSet('filaPendentePlanilha', filaPendentePlanilha);
+    _esconderAvisoPendencia();
+    _statusPlanilha('✅ ' + qtd + ' registro(s) gravado(s) às ' + new Date().toLocaleTimeString('pt-BR'), true);
+  } catch (e) {
+    console.error(e);
+    const msg = (e && e.message) ? e.message : String(e);
+    _mostrarAvisoPendencia();
+    _statusPlanilha('⚠️ ' + filaPendentePlanilha.length + ' registro(s) pendente(s) de gravação.', false);
+  } finally {
+    _gravandoFila = false;
+  }
+}
+
 async function exportarExcel() {
   // Definição das colunas:
   // align      = alinhamento das células de DADOS
@@ -1601,8 +1852,12 @@ function renderGrafico() {
 
 function init() {
   const n = new Date();
-  document.getElementById('f-data').valueAsDate = n;
-  document.getElementById('filtro-data-historico').valueAsDate = n;
+  // Monta a data usando componentes LOCAIS (não UTC) para evitar que o dia
+  // vire às 21h (horário de Brasília/Bahia, UTC-3) em vez de à meia-noite.
+  // valueAsDate interpreta o Date como UTC, o que causava esse bug.
+  const dataLocal = n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0') + '-' + String(n.getDate()).padStart(2,'0');
+  document.getElementById('f-data').value = dataLocal;
+  document.getElementById('filtro-data-historico').value = dataLocal;
   document.getElementById('f-hora').value = String(n.getHours()).padStart(2,'0') + ':' + String(n.getMinutes()).padStart(2,'0');
   document.getElementById('badge-num').innerText = "#" + String(contador).padStart(4,'0');
   document.getElementById('f-peso').value = ""; document.getElementById('f-um').value = ""; document.getElementById('f-placa').value = ""; document.getElementById('f-motorista').value = "";
@@ -1617,6 +1872,16 @@ function init() {
 }
 
 setInterval(() => { document.getElementById('clock').innerText = new Date().toLocaleString('pt-BR'); }, 1000);
+
+// Nova tentativa automática de gravação pendente:
+// 1) ao voltar para a aba do navegador (ex: depois de fechar o Excel)
+document.addEventListener('visibilitychange', () => { if (!document.hidden) processarFilaPlanilha(); });
+// 2) ao focar a janela do navegador
+window.addEventListener('focus', () => processarFilaPlanilha());
+// 3) periodicamente, a cada 10s, como garantia extra
+setInterval(() => processarFilaPlanilha(), 10000);
+
+restaurarPlanilhaAutomatica();
 init();
 
 // Re-renderiza gráfico ao redimensionar janela
