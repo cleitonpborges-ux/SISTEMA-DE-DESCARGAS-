@@ -903,6 +903,14 @@ async function salvarEImprimir() {
   // Assim, o valor digitado ou colado já fica disponível na lista de
   // sugestões para a próxima carga, com opção de trocar ou excluir a qualquer momento.
   updateSelects();
+  // Grava a Origem/Cultivar deste lançamento como "última usada" diretamente aqui
+  // (e não só no evento de blur do campo), para garantir que fiquem pré-preenchidos
+  // no próximo lançamento mesmo em telas touch, onde o blur pode não disparar a
+  // tempo antes de clicar em "Salvar e Imprimir".
+  db_ultima_origem   = o.origem;
+  db_ultima_cultivar = o.cultivar;
+  _lsSet('ultima_origem',   db_ultima_origem);
+  _lsSet('ultima_cultivar', db_ultima_cultivar);
   await salvarNaPlanilhaAutomatica(o);
 
   window.print();
