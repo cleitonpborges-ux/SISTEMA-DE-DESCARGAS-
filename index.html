@@ -940,8 +940,18 @@ function _registrarValorConhecido(id, valor) {
   if (!jaExiste) {
     arr.push(v);
     _lsSet(key, arr);
-    updateSelects();
   }
+  // Se esse valor tinha sido excluído da lista de sugestões antes (botão "x"), o fato de a
+  // pessoa estar digitando/salvando ele de novo agora significa que quer voltar a usá-lo —
+  // então ele sai da lista de "removidos" e volta a aparecer nas sugestões.
+  const remKey = id === 'origem' ? 'origens_removidas'    : 'cultivares_removidas';
+  const remArr = id === 'origem' ? db_origens_removidas   : db_cultivares_removidas;
+  const idxRem = remArr.findIndex(x => x.trim().toLowerCase() === v.toLowerCase());
+  if (idxRem !== -1) {
+    remArr.splice(idxRem, 1);
+    _lsSet(remKey, remArr);
+  }
+  updateSelects();
 }
 
 function sync(ext = null) {
