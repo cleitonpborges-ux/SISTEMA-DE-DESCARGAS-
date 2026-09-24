@@ -540,6 +540,24 @@
   </div>
 
   <div id="tab-config" class="section">
+    <!-- BACKUP: exportar/importar todos os dados do sistema (útil antes de reinstalar o app ou trocar de aparelho) -->
+    <div style="margin-bottom:24px;">
+      <div class="form-card">
+        <div class="form-header"><h2>BACKUP DO SISTEMA</h2></div>
+        <div class="form-body">
+          <p style="font-size:12px; color:var(--muted); margin-bottom:14px; line-height:1.5;">
+            Antes de reinstalar o app (ou trocar de celular/computador), baixe um backup com tudo:
+            frota, histórico de descargas, produtos, áreas cadastradas e a última Origem/Cultivar usada.
+            Depois, é só restaurar esse arquivo no app novo.
+          </p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn btn-primary" style="width:auto; padding:12px 20px;" onclick="exportarBackup()">⬇ BAIXAR BACKUP</button>
+            <button class="btn" style="width:auto; padding:12px 20px; background:var(--accent2); color:#fff;" onclick="document.getElementById('input-restaurar-backup').click()">⬆ RESTAURAR BACKUP</button>
+            <input type="file" id="input-restaurar-backup" accept="application/json" style="display:none" onchange="importarBackup(event)">
+          </div>
+        </div>
+      </div>
+    </div>
     <!-- PRODUTOS: card compacto em linha separada -->
     <div style="max-width:420px; margin-bottom:24px;">
       <div class="form-card">
@@ -652,6 +670,67 @@ function _lsGet(key, fallback) {
 // Todas as gravações usam a versão atual automaticamente
 function _lsSet(sufixo, valor) {
   localStorage.setItem(VERSAO_ATUAL + sufixo, typeof valor === 'string' ? valor : JSON.stringify(valor));
+}
+
+// ─── BACKUP / RESTAURAÇÃO ────────────────────────────────────────────────────
+// Reúne TODAS as chaves do sistema (inclusive de versões antigas ainda não
+// migradas) para não perder nada no backup.
+function _chavesDoSistema() {
+  const prefixos = VERSOES_CONHECIDAS.concat([VERSAO_ATUAL]);
+  const chaves = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && prefixos.some(p => k.startsWith(p))) chaves.push(k);
+  }
+  return chaves;
+}
+
+function exportarBackup() {
+  try {
+    const dados = {};
+    _chavesDoSistema().forEach(k => { dados[k] = localStorage.getItem(k); });
+    const backup = {
+      sistema: 'Sistema de Descargas',
+      versao: VERSAO_ATUAL,
+      dataBackup: new Date().toISOString(),
+      dados: dados
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const nomeArquivo = 'backup-descargas-' + new Date().toISOString().slice(0,10) + '.json';
+    a.href = url; a.download = nomeArquivo;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('✅ Backup baixado: ' + nomeArquivo);
+  } catch (err) {
+    showToast('❌ Erro ao gerar backup: ' + err.message);
+  }
+}
+
+function importarBackup(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const backup = JSON.parse(e.target.result);
+      if (!backup || typeof backup.dados !== 'object') throw new Error('Arquivo de backup inválido');
+      const dataTxt = backup.dataBackup ? new Date(backup.dataBackup).toLocaleString('pt-BR') : '(data desconhecida)';
+      if (!confirm('Isso vai SUBSTITUIR os dados atuais do app pelos dados do backup de ' + dataTxt + '.\n\nDeseja continuar?')) {
+        event.target.value = '';
+        return;
+      }
+      Object.keys(backup.dados).forEach(k => localStorage.setItem(k, backup.dados[k]));
+      showToast('✅ Backup restaurado! Recarregando...');
+      setTimeout(() => location.reload(), 1000);
+    } catch (err) {
+      showToast('❌ Erro ao restaurar backup: ' + err.message);
+    } finally {
+      event.target.value = '';
+    }
+  };
+  reader.readAsText(file);
 }
 
 let db_frota    = _lsGet(VERSAO_ATUAL + 'frota',    {});
