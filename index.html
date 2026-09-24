@@ -660,7 +660,14 @@ function _lsGet(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
     if (raw === null) return fallback;
-    return JSON.parse(raw) ?? fallback;
+    try {
+      return JSON.parse(raw) ?? fallback;
+    } catch (eParse) {
+      // _lsSet grava strings "cruas" (sem JSON.stringify) quando o valor já é string
+      // (ex: última Origem/Cultivar digitada). Nesse caso o texto já É o valor certo —
+      // não é dado corrompido, então devolvemos ele em vez de descartar e usar o padrão.
+      return raw;
+    }
   } catch(e) {
     console.warn('[Sistema] Dado corrompido em "' + key + '", usando valor padrão.', e);
     return fallback;
@@ -741,6 +748,19 @@ let db_origens_removidas    = _lsGet(VERSAO_ATUAL + 'origens_removidas',    []);
 let db_cultivares_removidas = _lsGet(VERSAO_ATUAL + 'cultivares_removidas', []);
 let db_ultima_origem    = _lsGet(VERSAO_ATUAL + 'ultima_origem',    '');
 let db_ultima_cultivar  = _lsGet(VERSAO_ATUAL + 'ultima_cultivar',  '');
+// Listas "conhecidas" de Origem/Cultivar: alimentadas assim que a pessoa digita e sai do campo,
+// e não apenas quando um lançamento é salvo/impresso. Isso garante que o valor entre na lista
+// de sugestões imediatamente, mesmo que o ticket ainda não tenha sido concluído (placa/peso).
+let db_origens_conhecidas    = _lsGet(VERSAO_ATUAL + 'origens_conhecidas',    []);
+let db_cultivares_conhecidas = _lsGet(VERSAO_ATUAL + 'cultivares_conhecidas', []);
+// Migração única: aproveita o histórico já existente de lançamentos para não perder
+// sugestões que só existiam via db_ordens antes desta correção.
+if (db_origens_conhecidas.length === 0 && db_cultivares_conhecidas.length === 0 && db_ordens.length > 0) {
+  db_origens_conhecidas    = [...new Set(db_ordens.map(o => (o.origem   || '').trim()).filter(Boolean))];
+  db_cultivares_conhecidas = [...new Set(db_ordens.map(o => (o.cultivar || '').trim()).filter(Boolean))];
+  _lsSet('origens_conhecidas',    db_origens_conhecidas);
+  _lsSet('cultivares_conhecidas', db_cultivares_conhecidas);
+}
 let contador    = parseInt(localStorage.getItem(VERSAO_ATUAL + 'contador')) || 1;
 let currentEditId = null;
 let planilhaHandle = null; // referência ao arquivo .xlsx vinculado (aba ENTRADA)
@@ -817,6 +837,9 @@ function _salvarUltimaOrigemCultivar() {
   db_ultima_cultivar = document.getElementById('f-cultivar').value;
   _lsSet('ultima_origem',   db_ultima_origem);
   _lsSet('ultima_cultivar', db_ultima_cultivar);
+  // Adiciona à lista de sugestões assim que a pessoa digita, sem esperar o ticket ser salvo/impresso.
+  _registrarValorConhecido('origem',   db_ultima_origem);
+  _registrarValorConhecido('cultivar', db_ultima_cultivar);
 }
 
 function _comboOpen(id) {
@@ -897,10 +920,28 @@ function updateSelects() {
   sr.innerHTML = '<option value="">Selecione...</option>';
   db_produtos.sort().forEach(p => sr.innerHTML += `<option value="${p}" ${p === currPr ? 'selected' : ''}>${p}</option>`);
 
-  const origens    = _valoresUnicos(db_ordens.map(o => o.origem),   db_origens_removidas);
-  const cultivares = _valoresUnicos(db_ordens.map(o => o.cultivar), db_cultivares_removidas);
+  // Sugestões vêm da lista "conhecida" (alimentada ao digitar) + histórico de lançamentos salvos,
+  // para não perder nada, com os itens removidos pelo usuário sempre excluídos.
+  const origens    = _valoresUnicos(db_origens_conhecidas.concat(db_ordens.map(o => o.origem)),      db_origens_removidas);
+  const cultivares = _valoresUnicos(db_cultivares_conhecidas.concat(db_ordens.map(o => o.cultivar)), db_cultivares_removidas);
   _comboSetData('origem',   origens);
   _comboSetData('cultivar', cultivares);
+}
+
+// Registra um valor de Origem/Cultivar digitado pela pessoa na lista de sugestões,
+// imediatamente ao sair do campo — não é preciso concluir e imprimir o ticket inteiro
+// para o valor passar a aparecer como opção nas próximas cargas.
+function _registrarValorConhecido(id, valor) {
+  const v = (valor || '').trim();
+  if (!v) return;
+  const arr = id === 'origem' ? db_origens_conhecidas : db_cultivares_conhecidas;
+  const key = id === 'origem' ? 'origens_conhecidas'  : 'cultivares_conhecidas';
+  const jaExiste = arr.some(x => x.trim().toLowerCase() === v.toLowerCase());
+  if (!jaExiste) {
+    arr.push(v);
+    _lsSet(key, arr);
+    updateSelects();
+  }
 }
 
 function sync(ext = null) {
@@ -973,6 +1014,11 @@ async function salvarEImprimir() {
     obs: document.getElementById('f-obs').value.toUpperCase().trim(),
     editado: false
   };
+
+  // Garante que Origem/Cultivar entrem na lista de sugestões mesmo se, por algum motivo,
+  // o evento de blur do campo não tiver disparado antes do clique em "Salvar e Imprimir".
+  _registrarValorConhecido('origem',   o.origem);
+  _registrarValorConhecido('cultivar', o.cultivar);
 
   db_ordens.unshift(o);
   _lsSet('ordens', db_ordens);
