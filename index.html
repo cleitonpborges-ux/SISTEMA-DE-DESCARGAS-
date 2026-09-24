@@ -215,7 +215,7 @@
   .combo-list.open { display: block; }
   .combo-item {
     padding: 9px 13px; font-size: 13px; cursor: pointer;
-    font-family: 'IBM Plex Mono', monospace; text-transform: uppercase;
+    font-family: 'IBM Plex Mono', monospace;
     border-bottom: 1px solid var(--line); transition: background 0.1s;
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
   }
@@ -286,11 +286,11 @@
     </div>
     <div class="field" style="text-align: left; margin-bottom:15px">
         <label>Origem</label>
-        <input type="text" id="edit-origem-input" style="text-transform:uppercase">
+        <input type="text" id="edit-origem-input">
     </div>
     <div class="field" style="text-align: left; margin-bottom:15px">
         <label>Cultivar</label>
-        <input type="text" id="edit-cultivar-input" style="text-transform:uppercase">
+        <input type="text" id="edit-cultivar-input">
     </div>
     <div class="field" style="text-align: left; margin-bottom:15px">
         <label>Peso Bruto (kg)</label>
@@ -422,7 +422,7 @@
           <div class="field">
             <label>Origem</label>
             <div class="combo-wrap" id="combo-wrap-origem">
-              <input type="text" id="f-origem" style="text-transform:uppercase" autocomplete="off" oninput="sync(); _comboFilter('origem')" onfocus="_comboFocus('origem')" onblur="_comboBlur('origem'); _salvarUltimaOrigemCultivar()" placeholder="Digite ou selecione...">
+              <input type="text" id="f-origem" autocomplete="off" oninput="sync(); _comboFilter('origem')" onfocus="_comboFocus('origem')" onblur="_comboBlur('origem'); _salvarUltimaOrigemCultivar()" placeholder="Digite ou selecione...">
               <button type="button" class="combo-arrow" onmousedown="event.preventDefault(); _comboToggle('origem')" tabindex="-1">&#9660;</button>
               <div class="combo-list" id="combo-list-origem"></div>
             </div>
@@ -430,7 +430,7 @@
           <div class="field">
             <label>Cultivar</label>
             <div class="combo-wrap" id="combo-wrap-cultivar">
-              <input type="text" id="f-cultivar" style="text-transform:uppercase" autocomplete="off" oninput="if(document.getElementById('f-semente').checked) onSementeChange(); sync(); _comboFilter('cultivar')" onfocus="_comboFocus('cultivar')" onblur="_comboBlur('cultivar'); _salvarUltimaOrigemCultivar()" placeholder="Digite ou selecione...">
+              <input type="text" id="f-cultivar" autocomplete="off" oninput="if(document.getElementById('f-semente').checked) onSementeChange(); sync(); _comboFilter('cultivar')" onfocus="_comboFocus('cultivar')" onblur="_comboBlur('cultivar'); _salvarUltimaOrigemCultivar()" placeholder="Digite ou selecione...">
               <button type="button" class="combo-arrow" onmousedown="event.preventDefault(); _comboToggle('cultivar')" tabindex="-1">&#9660;</button>
               <div class="combo-list" id="combo-list-cultivar"></div>
             </div>
@@ -560,8 +560,8 @@
             <div class="field"><label>Motorista</label><input type="text" id="cfg-motorista" style="text-transform:uppercase"></div>
           </div>
           <div class="form-row cols-2" style="margin-top:10px; margin-bottom:0">
-            <div class="field"><label>Origem (padrão)</label><input type="text" id="cfg-origem" style="text-transform:uppercase" placeholder="Opcional..."></div>
-            <div class="field"><label>Cultivar (padrão)</label><input type="text" id="cfg-cultivar" style="text-transform:uppercase" placeholder="Opcional..."></div>
+            <div class="field"><label>Origem (padrão)</label><input type="text" id="cfg-origem" placeholder="Opcional..."></div>
+            <div class="field"><label>Cultivar (padrão)</label><input type="text" id="cfg-cultivar" placeholder="Opcional..."></div>
           </div>
           <button class="btn btn-primary" style="margin-top:10px" onclick="salvarFrota()">+ SALVAR VEÍCULO</button>
           <div style="overflow-x:auto;"><table id="tbl-frota" style="min-width:600px;">
@@ -586,7 +586,7 @@
         <div class="form-header"><h2>ÁREAS (LOTES / PIVÔS)</h2></div>
         <div class="form-body">
           <div class="form-row cols-2" style="margin-bottom:0">
-            <div class="field"><label>Lote / Pivô / Talhão</label><input type="text" id="cfg-area-nome" style="text-transform:uppercase" placeholder="Igual ao campo Origem"></div>
+            <div class="field"><label>Lote / Pivô / Talhão</label><input type="text" id="cfg-area-nome" placeholder="Igual ao campo Origem"></div>
             <div class="field"><label>Área (ha)</label><input type="number" step="0.01" min="0" id="cfg-area-ha" placeholder="Ex: 120.5"></div>
           </div>
           <p style="font-size:11px; color:var(--muted); margin-top:6px;">O nome cadastrado aqui deve ser igual ao usado no campo <strong>Origem</strong> das descargas, para o sistema vincular a área e calcular a produtividade (kg/ha e sc/ha) no Histórico.</p>
@@ -701,7 +701,7 @@ function _comboRender(id, filter) {
     list.innerHTML = '<div class="combo-empty">Nenhum registro encontrado</div>';
   } else {
     list.innerHTML = items.map(v =>
-      `<div class="combo-item${v === input.value.toUpperCase() ? ' selected' : ''}">
+      `<div class="combo-item${v.toLowerCase() === input.value.trim().toLowerCase() ? ' selected' : ''}">
         <span class="combo-item-text"
               onmousedown="event.preventDefault(); _comboSelect('${id}', '${v.replace(/'/g,"\\'")}')">${v}</span>
         <span class="combo-item-del" title="Remover da lista"
@@ -778,6 +778,30 @@ function _comboBlur(id) {
   setTimeout(() => _comboClose(id), 180);
 }
 
+// Lista de valores únicos sem diferenciar maiúscula/minúscula (mantém a grafia do lançamento mais recente,
+// já que db_ordens é ordenado do mais novo para o mais antigo) e sem os itens removidos pelo usuário.
+function _valoresUnicos(valores, removidos) {
+  const rem  = new Set((removidos || []).map(v => String(v).trim().toLowerCase()));
+  const mapa = new Map();
+  valores.forEach(v => {
+    const t = (v || '').trim();
+    if (!t) return;
+    const k = t.toLowerCase();
+    if (rem.has(k) || mapa.has(k)) return;
+    mapa.set(k, t);
+  });
+  return [...mapa.values()].sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
+}
+
+// Busca a área cadastrada de um lote/talhão sem diferenciar maiúscula/minúscula
+function _buscarArea(nome) {
+  if (!nome) return null;
+  if (db_areas[nome]) return db_areas[nome];
+  const k = nome.trim().toLowerCase();
+  const achou = Object.keys(db_areas).find(n => n.trim().toLowerCase() === k);
+  return achou ? db_areas[achou] : null;
+}
+
 function updateSelects() {
   const sp = document.getElementById('f-placa');
   const currP = sp.value;
@@ -793,8 +817,8 @@ function updateSelects() {
   sr.innerHTML = '<option value="">Selecione...</option>';
   db_produtos.sort().forEach(p => sr.innerHTML += `<option value="${p}" ${p === currPr ? 'selected' : ''}>${p}</option>`);
 
-  const origens   = [...new Set(db_ordens.map(o => o.origem).filter(Boolean))].filter(v => !db_origens_removidas.includes(v)).sort();
-  const cultivares = [...new Set(db_ordens.map(o => o.cultivar).filter(Boolean))].filter(v => !db_cultivares_removidas.includes(v)).sort();
+  const origens    = _valoresUnicos(db_ordens.map(o => o.origem),   db_origens_removidas);
+  const cultivares = _valoresUnicos(db_ordens.map(o => o.cultivar), db_cultivares_removidas);
   _comboSetData('origem',   origens);
   _comboSetData('cultivar', cultivares);
 }
@@ -864,8 +888,8 @@ async function salvarEImprimir() {
     placa: p, bruto: bruto, tara: tara, liquido: bruto - tara,
     produto: document.getElementById('f-produto').value, umidade: document.getElementById('f-um').value,
     motorista: document.getElementById('f-motorista').value,
-    origem: document.getElementById('f-origem').value.toUpperCase().trim(),
-    cultivar: document.getElementById('f-cultivar').value.toUpperCase().trim(),
+    origem: document.getElementById('f-origem').value.trim(),
+    cultivar: document.getElementById('f-cultivar').value.trim(),
     obs: document.getElementById('f-obs').value.toUpperCase().trim(),
     editado: false
   };
@@ -982,6 +1006,15 @@ function renderTotalizador() {
     </tr>`;
 }
 
+// Peso líquido já descontado, igual à planilha vinculada:
+// Peso Final = Líquido − Impureza (1% fixo) − Desconto de umidade (tabela).
+const IMPUREZA_PCT = 1;
+function _pesoComDesconto(o) {
+  const liq = parseFloat(o.liquido) || 0;
+  const descUmi = buscarDescontoUmidade(o.umidade);
+  return liq - (liq * IMPUREZA_PCT / 100) - (liq * descUmi / 100);
+}
+
 function renderResumo() {
   const grid = document.getElementById('resumo-grid');
   const badge = document.getElementById('resumo-total-geral');
@@ -1001,20 +1034,23 @@ function renderResumo() {
   // Chave: "origem · cultivar" (sem diferenciar semente aqui)
   // Cada grupo tem dois sub-buckets: grao e semente
   const grupos = {};
-  let totalGeralLiq = 0, somaUmidade = 0, contUmidade = 0;
+  const _chavesGrupo = {};
+  let totalGeralLiq = 0, totalGeralFinal = 0, somaUmidade = 0, contUmidade = 0;
 
   const acumular = (bucket, o, liq, um) => {
     bucket.liquido += liq;
+    bucket.final   += _pesoComDesconto(o);
     bucket.bruto   += parseFloat(o.bruto) || 0;
     bucket.ordens  += 1;
     if (o.produto) bucket.produto = o.produto;
     if (!isNaN(um) && um > 0) { bucket.umSoma += um; bucket.umCount += 1; }
   };
-  const novoBucket = (o) => ({ liquido:0, bruto:0, ordens:0, produto: o.produto||'', umSoma:0, umCount:0 });
+  const novoBucket = (o) => ({ liquido:0, final:0, bruto:0, ordens:0, produto: o.produto||'', umSoma:0, umCount:0 });
 
   doDia.forEach(o => {
     const liq = parseFloat(o.liquido) || 0;
     totalGeralLiq += liq;
+    totalGeralFinal += _pesoComDesconto(o);
     const um = parseFloat(o.umidade);
     if (!isNaN(um) && um > 0) { somaUmidade += um; contUmidade++; }
 
@@ -1025,6 +1061,10 @@ function renderResumo() {
     else if (origem)        chave = origem;
     else if (cultivar)      chave = cultivar;
     else                    chave = '(Sem identificação)';
+
+    const chaveNorm = chave.toLowerCase();
+    if (!_chavesGrupo[chaveNorm]) _chavesGrupo[chaveNorm] = chave;
+    chave = _chavesGrupo[chaveNorm];
 
     if (!grupos[chave]) grupos[chave] = { grao: null, semente: null, origem: origem };
 
@@ -1040,6 +1080,8 @@ function renderResumo() {
   linhaSimples.innerHTML = `
     <span>CARGAS: <strong>${doDia.length}</strong></span>
     <span>TOTAL LÍQ: <strong>${fmtInt(totalGeralLiq)} kg</strong></span>
+    <span>DESCONTO: <strong>${fmtInt(totalGeralLiq - totalGeralFinal)} kg</strong></span>
+    <span>LÍQ C/ DESC.: <strong>${fmtInt(totalGeralFinal)} kg</strong></span>
     <span>UMID. MÉDIA: <strong>${mediaGeralUm}%</strong></span>
   `;
 
@@ -1048,8 +1090,8 @@ function renderResumo() {
 
   // Ordena por total líquido decrescente
   const lista = Object.entries(grupos).sort((a, b) => {
-    const totA = (a[1].grao?.liquido||0) + (a[1].semente?.liquido||0);
-    const totB = (b[1].grao?.liquido||0) + (b[1].semente?.liquido||0);
+    const totA = (a[1].grao?.final||0) + (a[1].semente?.final||0);
+    const totB = (b[1].grao?.final||0) + (b[1].semente?.final||0);
     return totB - totA;
   });
 
@@ -1061,15 +1103,39 @@ function renderResumo() {
     return `<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:${umColor}">${umIcon} ${mediaUm}%</div>`;
   };
 
-  const produtividadeHTML = (origem, liqKg) => {
-    const areaCad = origem ? db_areas[origem] : null;
-    const ha = areaCad ? parseFloat(areaCad.area) : 0;
-    if (!ha || ha <= 0) return '';
-    const kgHa = liqKg / ha;
-    const scHa = kgHa / 60; // saca padrão de 60kg
-    const fmtHa = Number(ha).toLocaleString('pt-BR', {maximumFractionDigits: 2});
-    return `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--accent)">${fmtHa} ha - ${fmt(scHa)} sc/ha</div>`;
-  };
+// HTML da linha "com desconto" exibida nos cards
+const descontoHTML = (bucket, fontSize) => {
+  const dif = bucket.liquido - bucket.final;
+  return `<div style="font-family:'IBM Plex Mono',monospace;font-size:${fontSize}px;font-weight:700;color:var(--muted);margin-top:2px">Desconto - (Imp + Um): ${fmtInt(dif)} Kg</div>`;
+};
+
+// Soma o peso COM DESCONTO de TODAS as descargas (qualquer data) de uma origem/lote,
+// para a produtividade acumular entre os dias em vez de zerar diariamente.
+// tipoFiltro: 'grao' | 'semente' | null (soma os dois juntos)
+function _somaLiquidoHistorico(origem, tipoFiltro) {
+  if (!origem) return 0;
+  const origemNorm = origem.trim().toUpperCase();
+  return db_ordens.reduce((soma, o) => {
+    if ((o.origem || '').trim().toUpperCase() !== origemNorm) return soma;
+    if (tipoFiltro) {
+      const ehSemente = (o.obs || '').toUpperCase().startsWith('SEMENTE');
+      const tipo = ehSemente ? 'semente' : 'grao';
+      if (tipo !== tipoFiltro) return soma;
+    }
+    return soma + _pesoComDesconto(o);
+  }, 0);
+}
+
+const produtividadeHTML = (origem, tipoFiltro) => {
+  const areaCad = _buscarArea(origem);
+  const ha = areaCad ? parseFloat(areaCad.area) : 0;
+  if (!ha || ha <= 0) return '';
+  const liqAcumulado = _somaLiquidoHistorico(origem, tipoFiltro);
+  const kgHa = liqAcumulado / ha;
+  const scHa = kgHa / 60; // saca padrão de 60kg
+  const fmtHa = Number(ha).toLocaleString('pt-BR', {maximumFractionDigits: 2});
+  return `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--accent)">${fmtHa} ha - ${fmt(scHa)} sc/ha</div>`;
+};
 
   const ladoHTML = (bucket, tipo, totalGeralLiq) => {
     if (!bucket) return '';
@@ -1078,10 +1144,11 @@ function renderResumo() {
     return `
       <div class="rc-split-lado ${isGrao ? 'lado-grao' : 'lado-semente'}">
         <span class="rc-split-badge ${isGrao ? 'badge-grao' : 'badge-semente'}">${isGrao ? '🌾 comercial' : '🌱 Semente'}</span>
-        <div class="rc-peso" style="font-size:17px">${fmtInt(bucket.liquido)} kg</div>
+        <div class="rc-peso" style="font-size:17px">${fmtInt(bucket.final)} kg</div>
+        ${descontoHTML(bucket, 10)}
         <div class="rc-meta">
-          <span>📦 ${bucket.ordens} ${bucket.ordens !== 1 ? 'viagens' : 'viagem'}</span>
-          <span>📊 ${pct}%</span>
+          <span>${bucket.ordens} ${bucket.ordens !== 1 ? 'viagens' : 'viagem'}</span>
+          <span>${pct}%</span>
         </div>
         ${umidadeHTML(bucket)}
       </div>`;
@@ -1108,14 +1175,15 @@ function renderResumo() {
         ${ehSemente ? '<span class="rc-split-badge badge-semente" style="margin-bottom:4px">🌱 Semente</span>' : ''}
         <div class="rc-titulo">${titulo}</div>
         ${sub ? `<div class="rc-subtitulo">${sub}</div>` : ''}
-        <div class="rc-peso">${fmtInt(bucket.liquido)} kg</div>
+        <div class="rc-peso">${fmtInt(bucket.final)} kg</div>
+        ${descontoHTML(bucket, 11)}
         <div class="rc-meta">
-          <span>📦 ${bucket.ordens} ${bucket.ordens !== 1 ? 'viagens' : 'viagem'}</span>
-          <span>📊 ${pct}%</span>
-          ${bucket.produto ? `<span>🌾 ${bucket.produto}</span>` : ''}
+          <span>${bucket.ordens} ${bucket.ordens !== 1 ? 'viagens' : 'viagem'}</span>
+          <span>${pct}%</span>
+          ${bucket.produto ? `<span>${bucket.produto}</span>` : ''}
         </div>
         ${mediaUm ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:${umColor}">${umIcon} Umid. média: ${mediaUm}%</div>` : ''}
-        ${produtividadeHTML(grupo.origem, bucket.liquido)}
+        ${produtividadeHTML(grupo.origem, ehSemente ? 'semente' : 'grao')}
       </div>`;
     }
 
@@ -1127,7 +1195,7 @@ function renderResumo() {
         <div style="padding:8px 14px 6px 18px; border-bottom:1px solid var(--line); background:var(--card)">
           <div class="rc-titulo" style="font-size:12px">${titulo}</div>
           ${sub ? `<div class="rc-subtitulo">${sub}</div>` : ''}
-          ${produtividadeHTML(grupo.origem, totalLiq)}
+          ${produtividadeHTML(grupo.origem, null)}
         </div>
         <div style="display:flex">
           ${ladoHTML(grao, 'grao', totalGeralLiq)}
@@ -1183,8 +1251,8 @@ function confirmarEdicao() {
     const nPr = document.getElementById('edit-produto-select').value;
     const nU  = document.getElementById('edit-um-input').value;
     const nB  = parseFloat(document.getElementById('edit-bruto-input').value) || o.bruto;
-    const nOr = document.getElementById('edit-origem-input').value.toUpperCase().trim();
-    const nCu = document.getElementById('edit-cultivar-input').value.toUpperCase().trim();
+    const nOr = document.getElementById('edit-origem-input').value.trim();
+    const nCu = document.getElementById('edit-cultivar-input').value.trim();
     if(o.placa !== nP || o.produto !== nPr || o.umidade !== nU || o.bruto !== nB || o.origem !== nOr || o.cultivar !== nCu) { o.editado = true; }
     o.placa = nP; o.produto = nPr; o.umidade = nU; o.bruto = nB;
     o.origem = nOr; o.cultivar = nCu;
@@ -1200,8 +1268,8 @@ function renderFrota() {
     <td style="font-family:'IBM Plex Mono',monospace; font-weight:700; white-space:nowrap">${p}</td>
     <td style="text-align:center"><input type="number" value="${db_frota[p].tara || ''}" style="width:90px; text-align:center" onchange="db_frota['${p}'].tara=this.value; _lsSet('frota', db_frota)"></td>
     <td style="white-space:nowrap">${db_frota[p].motorista}</td>
-    <td><input type="text" value="${db_frota[p].origem || ''}" placeholder="—" style="width:100%; min-width:80px; text-transform:uppercase" onchange="db_frota['${p}'].origem=this.value.toUpperCase().trim(); _lsSet('frota', db_frota)"></td>
-    <td><input type="text" value="${db_frota[p].cultivar || ''}" placeholder="—" style="width:100%; min-width:80px; text-transform:uppercase" onchange="db_frota['${p}'].cultivar=this.value.toUpperCase().trim(); _lsSet('frota', db_frota)"></td>
+    <td><input type="text" value="${db_frota[p].origem || ''}" placeholder="—" style="width:100%; min-width:80px" onchange="db_frota['${p}'].origem=this.value.trim(); _lsSet('frota', db_frota)"></td>
+    <td><input type="text" value="${db_frota[p].cultivar || ''}" placeholder="—" style="width:100%; min-width:80px" onchange="db_frota['${p}'].cultivar=this.value.trim(); _lsSet('frota', db_frota)"></td>
     <td style="text-align:center; white-space:nowrap"><button onclick="excluirFrota('${p}')" style="background:#fee; border:1.5px solid #fcc; color:red; border-radius:5px; padding:4px 9px; cursor:pointer; font-weight:700; font-size:13px">✕</button></td>
   </tr>`).join('');
 }
@@ -1222,8 +1290,8 @@ function _confirmarLimparTaras() {
 function salvarFrota() {
   const p = document.getElementById('cfg-placa').value.toUpperCase().trim();
   const m = document.getElementById('cfg-motorista').value.toUpperCase().trim();
-  const or = document.getElementById('cfg-origem').value.toUpperCase().trim();
-  const cu = document.getElementById('cfg-cultivar').value.toUpperCase().trim();
+  const or = document.getElementById('cfg-origem').value.trim();
+  const cu = document.getElementById('cfg-cultivar').value.trim();
   if(p && m) {
     // Preserva tara se o veículo já existia
     const taraExistente = db_frota[p] ? db_frota[p].tara : '';
@@ -1282,7 +1350,7 @@ function renderAreas() {
   </tr>`).join('');
 }
 function salvarArea() {
-  const nome = document.getElementById('cfg-area-nome').value.toUpperCase().trim();
+  const nome = document.getElementById('cfg-area-nome').value.trim();
   const ha   = parseFloat(document.getElementById('cfg-area-ha').value);
   if (!nome) { showToast('⚠️ Informe o nome do Lote/Pivô/Talhão.'); return; }
   if (isNaN(ha) || ha <= 0) { showToast('⚠️ Informe uma área (ha) válida.'); return; }
@@ -1497,8 +1565,8 @@ async function _escreverOrdensNaPlanilha(ordens) {
 
     ws.getCell(r, 2).value  = dataExcel;                          // B - Data
     ws.getCell(r, 3).value  = (o.placa || '').toUpperCase();      // C - Placa
-    ws.getCell(r, 4).value  = (o.origem || '').toUpperCase();     // D - Fazenda - Talhão
-    ws.getCell(r, 5).value  = (o.cultivar || '').toUpperCase();   // E - Cultivar
+    ws.getCell(r, 4).value  = (o.origem || '');     // D - Fazenda - Talhão
+    ws.getCell(r, 5).value  = (o.cultivar || '');   // E - Cultivar
     ws.getCell(r, 6).value  = Number(o.bruto) || 0;               // F - P. Bruto
     ws.getCell(r, 7).value  = Number(o.tara) || 0;                // G - P. Tara
     ws.getCell(r, 9).value  = 1;                                  // I - Imp. (%) fixo
@@ -1523,8 +1591,8 @@ async function _escreverOrdensNaPlanilha(ordens) {
       // reaplica os valores de entrada (a cópia de estilo acima não mexe em value)
       ws.getCell(r, 2).value  = dataExcel;
       ws.getCell(r, 3).value  = (o.placa || '').toUpperCase();
-      ws.getCell(r, 4).value  = (o.origem || '').toUpperCase();
-      ws.getCell(r, 5).value  = (o.cultivar || '').toUpperCase();
+      ws.getCell(r, 4).value  = (o.origem || '');
+      ws.getCell(r, 5).value  = (o.cultivar || '');
       ws.getCell(r, 6).value  = Number(o.bruto) || 0;
       ws.getCell(r, 7).value  = Number(o.tara) || 0;
       ws.getCell(r, 9).value  = 1;
@@ -1683,8 +1751,8 @@ async function exportarExcel() {
     const rowData = {
       Data:       o.data ? o.data.split('-').reverse().join('/') : '',
       Placa:      (o.placa    || '').toUpperCase(),
-      FazTalhao:  (o.origem   || '').toUpperCase(),
-      Cultivar:   (o.cultivar || '').toUpperCase(),
+      FazTalhao:  (o.origem   || ''),
+      Cultivar:   (o.cultivar || ''),
       PBruto:     o.bruto   ? Number(o.bruto)   : null,
       PTara:      o.tara    ? Number(o.tara)    : null,
       PLiquido:   pLiquido,
@@ -1750,14 +1818,14 @@ function renderGrafico() {
   // Filtro de origem
   const filtroOrigem = document.getElementById('grafico-filtro-origem')?.value || '';
   // Atualiza opções do filtro (baseadas apenas no dia selecionado)
-  const origens = [...new Set(doDia.map(o => (o.origem || '').trim()).filter(Boolean))].sort();
+  const origens = _valoresUnicos(doDia.map(o => o.origem), []);
   const sel = document.getElementById('grafico-filtro-origem');
   const selVal = sel.value;
   sel.innerHTML = '<option value="">Todos os Talhões</option>';
   origens.forEach(og => sel.innerHTML += `<option value="${og}" ${og === selVal ? 'selected' : ''}>${og}</option>`);
 
   const ordensFiltradas = filtroOrigem
-    ? doDia.filter(o => (o.origem || '').trim() === filtroOrigem)
+    ? doDia.filter(o => (o.origem || '').trim().toLowerCase() === filtroOrigem.trim().toLowerCase())
     : doDia;
 
   // Monta 1 coluna por caminhão, ordenado por horário de chegada
