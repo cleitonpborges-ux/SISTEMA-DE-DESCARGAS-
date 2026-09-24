@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sistema-descargas-v27';
+const CACHE_NAME = 'sistema-descargas-v28'; // <-- Sempre que atualizar o index.html, mude esse número (v29, v30...) para forçar a atualização em todos os aparelhos.
 const ASSETS = [
   './',
   './index.html',
@@ -33,20 +33,46 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// Fetch: serve do cache se disponível, senão busca na rede
+// Fetch:
+// - Para o "casco" do app (navegação / index.html): tenta a rede primeiro, pra sempre
+//   pegar a versão mais atual quando há internet; se falhar (offline), usa o cache.
+//   Isso evita o problema de ficar preso numa versão antiga do index.html.
+// - Para os demais arquivos (libs, fontes, ícones): cache primeiro, com atualização
+//   em segundo plano quando disponível na rede (mantém o app rápido e funcionando offline).
 self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET') return;
+
+  const url = new URL(event.request.url);
+  const ehCascoDoApp = event.request.mode === 'navigate' ||
+                        url.pathname.endsWith('/index.html') ||
+                        url.pathname === self.registration.scope.replace(self.location.origin, '') ||
+                        url.href === self.registration.scope;
+
+  if (ehCascoDoApp) {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request).then(cached => cached || caches.match('./index.html')))
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then(cached => {
       if (cached) return cached;
       return fetch(event.request).then(response => {
-        // Cacheia recursos válidos dinamicamente
         if (response && response.status === 200 && response.type !== 'opaque') {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         }
         return response;
       }).catch(() => {
-        // Fallback para o index.html em caso de falha de rede
         return caches.match('./index.html');
       });
     })
