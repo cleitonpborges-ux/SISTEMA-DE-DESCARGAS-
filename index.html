@@ -518,6 +518,7 @@
         </div>
         <button class="btn" style="white-space:nowrap; width:auto; font-size:12px; background:#fff; border:1.5px solid var(--primary); color:var(--primary); padding:9px 14px;" onclick="exportarExcel()">📊 Exportar Excel</button>
         <button id="btn-planilha-auto" class="btn" style="white-space:nowrap; width:auto; font-size:12px; background:#fff; border:1.5px solid var(--primary); color:var(--primary); padding:9px 14px;" onclick="conectarPlanilhaAutomatica()">🔗 Vincular Planilha Automática</button>
+        <button id="btn-planilha-desvincular" class="btn" style="display:none; white-space:nowrap; width:auto; font-size:12px; background:#fff; border:1.5px solid #c0392b; color:#c0392b; padding:9px 14px;" onclick="desvincularPlanilha()">Desvincular Planilha</button>
       </div>
       <div id="status-planilha-auto" style="margin-top:6px; font-size:11px; color:var(--muted); text-align:right;"></div>
       <div id="aviso-planilha-pendente" style="display:none; margin-top:8px; padding:10px 12px; background:#fff4e5; border:1.5px solid #e0a53c; border-radius:6px; font-size:13px; font-weight:700; color:#7a4a00; text-align:center;">
@@ -1462,11 +1463,64 @@ async function _idbGet(key) {
   });
 }
 
+async function _idbDelete(key) {
+  const db = await _idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('handles', 'readwrite');
+    tx.objectStore('handles').delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// Planilha conectada: mostra só "Desvincular Planilha".
+// Sem planilha (ou quando o navegador pediu para reconceder acesso): mostra o botão de vincular/reconectar.
+let planilhaPrecisaReconectar = false;
+function _atualizarBotoesPlanilha() {
+  const vinculada = !!planilhaHandle;
+  const bDesv = document.getElementById('btn-planilha-desvincular');
+  const bVinc = document.getElementById('btn-planilha-auto');
+  if (bDesv) bDesv.style.display = vinculada ? '' : 'none';
+  if (bVinc) {
+    bVinc.style.display = (!vinculada || planilhaPrecisaReconectar) ? '' : 'none';
+    bVinc.innerText = vinculada ? '🔗 Reconectar Planilha' : '🔗 Vincular Planilha Automática';
+  }
+}
+
 function _statusPlanilha(msg, ok) {
   const el = document.getElementById('status-planilha-auto');
-  if (!el) return;
-  el.innerText = msg;
-  el.style.color = ok ? '#1a7a4a' : 'var(--muted)';
+  if (el) {
+    el.innerText = msg;
+    el.style.color = ok ? '#1a7a4a' : 'var(--muted)';
+  }
+  _atualizarBotoesPlanilha();
+}
+
+// Abre o seletor de arquivo, pede permissão de edição e devolve o handle (ou null se cancelado/negado)
+async function _escolherArquivoPlanilha() {
+  const [handle] = await window.showOpenFilePicker({
+    types: [{ description: 'Planilha Excel', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }],
+    multiple: false
+  });
+  const perm = await handle.requestPermission({ mode: 'readwrite' });
+  if (perm !== 'granted') { showToast('Permissão negada para editar o arquivo.'); return null; }
+  return handle;
+}
+
+// Botão "Desvincular": esquece o arquivo; novos lançamentos deixam de ser gravados nele
+async function desvincularPlanilha() {
+  if (!planilhaHandle) return;
+  const nome = planilhaHandle.name || 'planilha';
+  const aviso = filaPendentePlanilha.length > 0
+    ? `\n\nAtenção: há ${filaPendentePlanilha.length} registro(s) ainda não gravado(s). Eles ficam guardados e serão gravados quando você vincular uma planilha novamente.`
+    : '';
+  if (!confirm(`Desvincular a planilha "${nome}"?\n\nOs novos lançamentos deixarão de ser gravados nela. Você pode vincular a mesma ou outra planilha quando quiser.${aviso}`)) return;
+  try { await _idbDelete('planilhaEntradaHandle'); } catch (e) { console.error(e); }
+  planilhaHandle = null;
+  planilhaPrecisaReconectar = false;
+  _esconderAvisoPendencia();
+  _statusPlanilha('Nenhuma planilha vinculada ainda.', false);
+  showToast('Planilha desvinculada.');
 }
 
 // Chamado ao carregar a página: tenta restaurar a conexão salva anteriormente
@@ -1481,10 +1535,12 @@ async function restaurarPlanilhaAutomatica() {
     const perm = await handle.queryPermission({ mode: 'readwrite' });
     if (perm === 'granted') {
       planilhaHandle = handle;
+      planilhaPrecisaReconectar = false;
       _statusPlanilha('📄 Planilha conectada: ' + handle.name, true);
       processarFilaPlanilha(); // se houver pendências de sessões anteriores, tenta agora
     } else {
       planilhaHandle = handle;
+      planilhaPrecisaReconectar = true;
       _statusPlanilha('⚠️ Clique em "Vincular Planilha Automática" para reconceder acesso a: ' + handle.name, false);
     }
   } catch (e) {
@@ -1505,6 +1561,7 @@ async function conectarPlanilhaAutomatica() {
       const perm = await handleSalvo.requestPermission({ mode: 'readwrite' });
       if (perm === 'granted') {
         planilhaHandle = handleSalvo;
+        planilhaPrecisaReconectar = false;
         _statusPlanilha('📄 Planilha conectada: ' + handleSalvo.name, true);
         showToast('Planilha reconectada!');
         processarFilaPlanilha();
@@ -1512,13 +1569,10 @@ async function conectarPlanilhaAutomatica() {
       }
     }
     // Sem arquivo salvo (ou permissão negada): abre o seletor para escolher o .xlsx
-    const [novoHandle] = await window.showOpenFilePicker({
-      types: [{ description: 'Planilha Excel', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }],
-      multiple: false
-    });
-    const perm2 = await novoHandle.requestPermission({ mode: 'readwrite' });
-    if (perm2 !== 'granted') { showToast('Permissão negada para editar o arquivo.'); return; }
+    const novoHandle = await _escolherArquivoPlanilha();
+    if (!novoHandle) return;
     planilhaHandle = novoHandle;
+    planilhaPrecisaReconectar = false;
     await _idbSet('planilhaEntradaHandle', novoHandle);
     _statusPlanilha('📄 Planilha conectada: ' + novoHandle.name, true);
     showToast('Planilha vinculada com sucesso!');
@@ -1645,6 +1699,7 @@ async function processarFilaPlanilha() {
     const perm = await planilhaHandle.queryPermission({ mode: 'readwrite' });
     if (perm !== 'granted') {
       _mostrarAvisoPendencia();
+      planilhaPrecisaReconectar = true;
       _statusPlanilha('⚠️ Permissão de acesso perdida. Clique em "Vincular Planilha Automática".', false);
       return;
     }
