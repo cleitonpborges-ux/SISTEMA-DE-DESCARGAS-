@@ -897,6 +897,12 @@ async function salvarEImprimir() {
 
   db_ordens.unshift(o);
   _lsSet('ordens', db_ordens);
+  // Atualiza a lista de sugestões de Origem/Cultivar imediatamente após salvar,
+  // sem depender do fluxo de impressão (que usa setTimeout e window.print(),
+  // podendo demorar se o usuário não fechar o diálogo de impressão logo).
+  // Assim, o valor digitado ou colado já fica disponível na lista de
+  // sugestões para a próxima carga, com opção de trocar ou excluir a qualquer momento.
+  updateSelects();
   await salvarNaPlanilhaAutomatica(o);
 
   window.print();
