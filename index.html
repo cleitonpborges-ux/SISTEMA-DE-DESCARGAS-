@@ -1429,7 +1429,7 @@ function renderFrota() {
   const tbody = document.querySelector('#tbl-frota tbody');
   tbody.innerHTML = Object.keys(db_frota).sort().map(p => `<tr>
     <td style="font-family:'IBM Plex Mono',monospace; font-weight:700; white-space:nowrap">${p}</td>
-    <td style="text-align:center"><input type="number" value="${db_frota[p].tara || ''}" style="width:90px; text-align:center" onchange="db_frota['${p}'].tara=this.value; _lsSet('frota', db_frota)"></td>
+    <td style="text-align:center"><input type="number" value="${db_frota[p].tara || ''}" style="width:90px; text-align:center" onchange="_alterarTaraVeiculo('${p}', this.value)"></td>
     <td style="white-space:nowrap">${db_frota[p].motorista}</td>
     <td><input type="text" value="${db_frota[p].origem || ''}" placeholder="—" style="width:100%; min-width:80px" onchange="db_frota['${p}'].origem=this.value.trim(); _lsSet('frota', db_frota)"></td>
     <td><input type="text" value="${db_frota[p].cultivar || ''}" placeholder="—" style="width:100%; min-width:80px" onchange="db_frota['${p}'].cultivar=this.value.trim(); _lsSet('frota', db_frota)"></td>
@@ -1450,6 +1450,100 @@ function _confirmarLimparTaras() {
   renderFrota();
   showToast("Taras limpas!");
 }
+// Data de "hoje" no formato usado em o.data (YYYY-MM-DD), pelo horário LOCAL
+// (mesma lógica do init(), evita o bug de fuso horário UTC-3).
+function _dataHojeISO() {
+  const n = new Date();
+  return n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0') + '-' + String(n.getDate()).padStart(2,'0');
+}
+
+// Chamada ao editar a tara de um veículo na aba Frota. Se já existirem cargas
+// lançadas HOJE com essa placa, pergunta se a nova tara deve ser aplicada
+// retroativamente a elas (no app e na planilha vinculada) ou só valer a partir
+// de agora, pras próximas cargas.
+function _alterarTaraVeiculo(placa, novoValorStr) {
+  const taraAnteriorNum = parseFloat(db_frota[placa]?.tara) || 0;
+  const novaTaraNum     = parseFloat(novoValorStr) || 0;
+
+  db_frota[placa].tara = novoValorStr;
+  _lsSet('frota', db_frota);
+
+  if (novaTaraNum === taraAnteriorNum) return; // não mudou de fato, nada a perguntar
+
+  const hoje = _dataHojeISO();
+  const cargasHoje = db_ordens.filter(o => o.placa === placa && o.data === hoje);
+  if (cargasHoje.length === 0) return; // nenhuma carga hoje com essa placa ainda
+
+  const qtd = cargasHoje.length;
+  const aplicar = confirm(
+    `Caminhão com tara anterior informada. Gostaria de aplicar a nova tara (${fmt(novaTaraNum)} kg) em todas as ${qtd} carga${qtd !== 1 ? 's' : ''} de hoje dessa placa?\n\n` +
+    `Sim: as cargas de hoje dessa placa mudam (no app e na planilha vinculada).\n` +
+    `Não: as cargas já lançadas ficam com a tara antiga — só as próximas usam a nova.`
+  );
+  if (!aplicar) return;
+
+  cargasHoje.forEach(o => {
+    o.tara    = novaTaraNum;
+    o.liquido = (parseFloat(o.bruto) || 0) - novaTaraNum;
+    o.editado = true;
+  });
+  _lsSet('ordens', db_ordens);
+  renderHistorico(); renderGrafico(); renderTotalizador(); renderResumo();
+  showToast(`Tara atualizada em ${qtd} carga${qtd !== 1 ? 's' : ''} de hoje!`);
+
+  _atualizarTaraNaPlanilha(placa, hoje, novaTaraNum);
+}
+
+// Atualiza a coluna G (P. Tara) de todas as linhas do arquivo vinculado que
+// forem daquela placa e daquela data — usado quando a tara é corrigida e o
+// usuário escolhe aplicar retroativamente. As fórmulas de P.Líquido e demais
+// colunas já dependem de G, então recalculam sozinhas no Excel.
+async function _atualizarTaraNaPlanilha(placa, dataISO, novaTara) {
+  if (!planilhaHandle) return; // nada vinculado — nada a fazer
+  try {
+    const perm = await planilhaHandle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') {
+      _statusPlanilha('⚠️ Permissão de acesso perdida. A tara não pôde ser atualizada na planilha — vincule novamente.', false);
+      return;
+    }
+    const file   = await planilhaHandle.getFile();
+    const buffer = await file.arrayBuffer();
+    const wb     = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+    const ws = wb.getWorksheet('ENTRADA');
+    if (!ws) throw new Error('Aba "ENTRADA" não encontrada no arquivo vinculado.');
+
+    const [anoAlvo, mesAlvo, diaAlvo] = dataISO.split('-').map(Number);
+    const placaAlvo = (placa || '').toUpperCase();
+    let r = 4;
+    let alteradas = 0;
+    while (ws.getCell(r, 2).value !== null && ws.getCell(r, 2).value !== undefined && ws.getCell(r, 2).value !== '') {
+      const dataCell  = ws.getCell(r, 2).value;
+      const placaCell = (ws.getCell(r, 3).value || '').toString().toUpperCase();
+      if (dataCell instanceof Date && placaCell === placaAlvo &&
+          dataCell.getUTCFullYear() === anoAlvo && (dataCell.getUTCMonth() + 1) === mesAlvo && dataCell.getUTCDate() === diaAlvo) {
+        ws.getCell(r, 7).value = Number(novaTara) || 0; // G - P. Tara
+        alteradas++;
+      }
+      r++;
+    }
+
+    if (alteradas === 0) return; // ainda não tinha sido gravada na planilha
+
+    wb.calcProperties = wb.calcProperties || {};
+    wb.calcProperties.fullCalcOnLoad = true;
+
+    const novoBuffer = await wb.xlsx.writeBuffer();
+    const writable    = await planilhaHandle.createWritable();
+    await writable.write(novoBuffer);
+    await writable.close();
+    _statusPlanilha('✅ Tara atualizada em ' + alteradas + ' linha(s) da planilha às ' + new Date().toLocaleTimeString('pt-BR'), true);
+  } catch (e) {
+    console.error(e);
+    _statusPlanilha('⚠️ Não foi possível atualizar a tara na planilha (arquivo pode estar aberto no Excel). Tente novamente.', false);
+  }
+}
+
 function salvarFrota() {
   const p = document.getElementById('cfg-placa').value.toUpperCase().trim();
   const m = document.getElementById('cfg-motorista').value.toUpperCase().trim();
