@@ -1276,6 +1276,19 @@ function _somaLiquidoHistorico(origem, tipoFiltro) {
   }, 0);
 }
 
+// (removida: _somaLiquidoBrutoHistorico não é mais usada — Acumulado agora usa
+// _somaLiquidoHistorico, que já aplica o desconto de Impureza + Umidade)
+
+// Linha pequena com o total acumulado de kg entrado (histórico, todas as datas) para essa
+// origem — peso líquido já COM desconto (Impureza + Umidade), mesma letra/tamanho do
+// marcador de "viagens" (classe rc-meta, 11px).
+const acumuladoHTML = (origem, tipoFiltro) => {
+  if (!origem) return '';
+  const totalKg = _somaLiquidoHistorico(origem, tipoFiltro);
+  if (!totalKg) return '';
+  return `<div class="rc-meta" style="margin-top:2px"><span>Acumulado: <strong>${fmtInt(totalKg)}</strong> kg</span></div>`;
+};
+
 const produtividadeHTML = (origem, tipoFiltro) => {
   const areaCad = _buscarArea(origem);
   const ha = areaCad ? parseFloat(areaCad.area) : 0;
@@ -1284,21 +1297,21 @@ const produtividadeHTML = (origem, tipoFiltro) => {
   const kgHa = liqAcumulado / ha;
   const scHa = kgHa / 60; // saca padrão de 60kg
   const fmtHa = Number(ha).toLocaleString('pt-BR', {maximumFractionDigits: 2});
-  return `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--accent)">${fmtHa} ha - ${fmt(scHa)} sc/ha</div>`;
+  const fmtScHa = Number(scHa).toLocaleString('pt-BR', {minimumFractionDigits: 1, maximumFractionDigits: 1});
+  return `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--accent)">${fmtHa} ha - ${fmtScHa} sc/ha</div>`;
 };
 
-  const ladoHTML = (bucket, tipo, totalGeralLiq) => {
+  const ladoHTML = (bucket, tipo, totalGeralLiq, origem) => {
     if (!bucket) return '';
-    const pct = totalGeralLiq > 0 ? ((bucket.liquido / totalGeralLiq) * 100).toFixed(1) : 0;
     const isGrao = tipo === 'grao';
     return `
       <div class="rc-split-lado ${isGrao ? 'lado-grao' : 'lado-semente'}">
         <span class="rc-split-badge ${isGrao ? 'badge-grao' : 'badge-semente'}">${isGrao ? '🌾 comercial' : '🌱 Semente'}</span>
         <div class="rc-peso" style="font-size:17px">${fmtInt(bucket.final)} kg</div>
+        ${acumuladoHTML(origem || '', tipo)}
         ${descontoHTML(bucket, 10)}
         <div class="rc-meta">
           <span>${bucket.ordens} ${bucket.ordens !== 1 ? 'viagens' : 'viagem'}</span>
-          <span>${pct}%</span>
         </div>
         ${umidadeHTML(bucket)}
       </div>`;
@@ -1306,12 +1319,13 @@ const produtividadeHTML = (origem, tipoFiltro) => {
 
   grid.innerHTML = lista.map(([chave, grupo], i) => {
     const { grao, semente } = grupo;
-    const totalLiq = (grao?.liquido||0) + (semente?.liquido||0);
-    const pct = totalGeralLiq > 0 ? ((totalLiq / totalGeralLiq) * 100).toFixed(1) : 0;
     const cor = CORES[i % CORES.length];
     const partes = chave.split(' · ');
     const titulo = partes[0];
-    const sub    = partes.length > 1 ? partes.slice(1).join(' · ') : '';
+    const cultivarTxt = partes.length > 1 ? partes.slice(1).join(' · ') : '';
+    // Subtítulo combina Produto + Variedade, ex: "MILHO - MG 616 PWU"
+    const produtoDoGrupo = grao?.produto || semente?.produto || '';
+    const sub = [produtoDoGrupo, cultivarTxt].filter(Boolean).join(' - ');
 
     // Card simples (só comercial ou só semente)
     if (!grao || !semente) {
@@ -1326,11 +1340,10 @@ const produtividadeHTML = (origem, tipoFiltro) => {
         <div class="rc-titulo">${titulo}</div>
         ${sub ? `<div class="rc-subtitulo">${sub}</div>` : ''}
         <div class="rc-peso">${fmtInt(bucket.final)} kg</div>
+        ${acumuladoHTML(grupo.origem || '', ehSemente ? 'semente' : 'grao')}
         ${descontoHTML(bucket, 11)}
         <div class="rc-meta">
           <span>${bucket.ordens} ${bucket.ordens !== 1 ? 'viagens' : 'viagem'}</span>
-          <span>${pct}%</span>
-          ${bucket.produto ? `<span>${bucket.produto}</span>` : ''}
         </div>
         ${mediaUm ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:${umColor}">${umIcon} Umid. média: ${mediaUm}%</div>` : ''}
         ${produtividadeHTML(grupo.origem, ehSemente ? 'semente' : 'grao')}
@@ -1348,8 +1361,8 @@ const produtividadeHTML = (origem, tipoFiltro) => {
           ${produtividadeHTML(grupo.origem, null)}
         </div>
         <div style="display:flex">
-          ${ladoHTML(grao, 'grao', totalGeralLiq)}
-          ${ladoHTML(semente, 'semente', totalGeralLiq)}
+          ${ladoHTML(grao, 'grao', totalGeralLiq, grupo.origem)}
+          ${ladoHTML(semente, 'semente', totalGeralLiq, grupo.origem)}
         </div>
       </div>
     </div>`;
