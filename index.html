@@ -440,7 +440,7 @@
             <label>Peso Bruto (kg)</label>
             <div style="display:flex; gap:6px; align-items:center;">
               <input type="number" id="f-peso" oninput="sync()" style="flex:1;">
-              <button type="button" id="btn-balanca" onclick="capturarBalanca()" title="Capturar peso da balança (F8)" class="btn-balanca">
+              <button type="button" id="btn-balanca" onclick="capturarBalanca()" title="Capturar peso da balança (F8) — Shift+F8 troca a porta" class="btn-balanca">
                 <span class="balanca-dot"></span><span id="btn-balanca-label">⚖ F8</span>
               </button>
             </div>
@@ -2485,7 +2485,10 @@ window.addEventListener('keydown', function(e) {
   }
   if (e.key === 'F8') {
     e.preventDefault();
-    if (!e.repeat) capturarBalanca();
+    if (!e.repeat) {
+      if (e.shiftKey) _balancaDesconectar(true).then(capturarBalanca); // Shift+F8: escolher outra porta
+      else capturarBalanca();
+    }
   }
 });
 
@@ -2508,20 +2511,35 @@ function _balancaSetStatus(estado) {
   const label = document.getElementById('btn-balanca-label');
   if (!btn) return;
   btn.className = 'btn-balanca';
-  if (estado === 'conectada')    { btn.classList.add('conectada'); label.textContent = '⚖ PRONTA'; }
+  if (estado === 'conectada')    { btn.classList.add('conectada'); label.textContent = '⚖ F8'; }
   else if (estado === 'lendo')   { btn.classList.add('lendo');     label.textContent = '⚖ LENDO...'; }
   else if (estado === 'erro')    { btn.classList.add('erro');      label.textContent = '⚖ ERRO'; setTimeout(() => _balancaSetStatus(_balancaConectada ? 'conectada' : 'desconectada'), 2000); }
   else                           {                                  label.textContent = '⚖ F8'; }
 }
 
 // Abre a porta (se ainda não estiver aberta) e inicia a leitura contínua
+let _balancaLoop = null;
 async function _balancaAbrir(port) {
   if (!port.readable) await port.open(_BALANCA_CFG);
+  // Igual ao teste no Hercules (DTR e RTS desmarcados). O Chrome liga esses sinais ao
+  // abrir a porta e algumas balanças/conversores deixam de transmitir assim.
+  try { await port.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch (e) {}
   _balancaPort = port;
   _balancaConectada = true;
   _balancaBuffer = '';
   _balancaSetStatus('conectada');
-  _balancaLeituraBackground(port);
+  _balancaLoop = _balancaLeituraBackground(port);
+}
+
+// Desconecta e (opcionalmente) esquece a porta, para poder escolher outra
+async function _balancaDesconectar(esquecer) {
+  const port = _balancaPort;
+  _balancaConectada = false;
+  _balancaPort = null;
+  try { await _balancaReader?.cancel(); } catch (e) {}
+  try { await _balancaLoop; } catch (e) {}
+  if (esquecer && port && typeof port.forget === 'function') { try { await port.forget(); } catch (e) {} }
+  _balancaSetStatus('desconectada');
 }
 
 // Pede ao usuário para escolher a porta (só na 1ª vez; depois o Chrome lembra)
@@ -2544,26 +2562,30 @@ async function _balancaConectar() {
 }
 
 async function _balancaLeituraBackground(port) {
-  // Lê continuamente e mantém _balancaBuffer com os dados mais recentes
-  let fechado = Promise.resolve();
+  // Lê bytes continuamente e mantém _balancaBuffer com os dados mais recentes
+  let reader = null;
   try {
-    const decoder = new TextDecoderStream();
-    fechado = port.readable.pipeTo(decoder.writable).catch(() => {});
-    _balancaReader = decoder.readable.getReader();
+    reader = port.readable.getReader();
+    _balancaReader = reader;
     while (true) {
-      const { value, done } = await _balancaReader.read();
+      const { value, done } = await reader.read();
       if (done) break;
-      _balancaBuffer += value;
-      if (_balancaBuffer.length > 200) _balancaBuffer = _balancaBuffer.slice(-100);
+      if (value && value.length) {
+        let t = '';
+        for (const byte of value) t += String.fromCharCode(byte & 0x7F); // ignora bit de paridade
+        _balancaBuffer += t;
+        if (_balancaBuffer.length > 200) _balancaBuffer = _balancaBuffer.slice(-100);
+      }
     }
   } catch (e) { /* cabo desconectado ou porta fechada */ }
+  try { reader && reader.releaseLock(); } catch (e) {}
   // Saiu do loop: a leitura acabou (cabo solto, balança desligada...)
   if (_balancaPort === port) {
     _balancaConectada = false;
     _balancaPort = null;
     _balancaSetStatus('desconectada');
   }
-  try { await fechado; await port.close(); } catch (e) {}
+  try { await port.close(); } catch (e) {}
 }
 
 function _balancaParsearBuffer(buf) {
@@ -2613,12 +2635,17 @@ async function capturarBalanca() {
     } else {
       const raw = _balancaBuffer;
       console.warn('Balança: sem leitura válida. Buffer recebido:', JSON.stringify(raw));
-      _balancaSetStatus(_balancaConectada ? 'erro' : 'desconectada');
-      showToast(!_balancaConectada
-        ? '⚠️ Balança desconectada. Verifique o cabo e aperte F8 para reconectar.'
-        : raw
-          ? '⚠️ Dados fora do formato esperado: ' + JSON.stringify(raw.slice(-24))
-          : '⚠️ Nenhum dado recebido da balança. Verifique cabo/porta e tente novamente.');
+      if (_balancaConectada && !raw) {
+        // Porta aberta mas calada: provavelmente é a porta errada. Libera para escolher de novo.
+        await _balancaDesconectar(true);
+        _balancaSetStatus('erro');
+        showToast('⚠️ Nenhum dado nessa porta. Feche o Hercules/outros programas, aperte F8 e escolha a porta da balança (COM4).');
+      } else {
+        _balancaSetStatus(_balancaConectada ? 'erro' : 'desconectada');
+        showToast(!_balancaConectada
+          ? '⚠️ Balança desconectada. Verifique o cabo e aperte F8 para reconectar.'
+          : '⚠️ Dados fora do formato esperado: ' + JSON.stringify(raw.slice(-24)));
+      }
     }
   } finally {
     _balancaCapturando = false;
