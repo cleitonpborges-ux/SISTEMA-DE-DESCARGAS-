@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sistema-descargas-v004'; // <-- Sempre que atualizar o index.html, mude esse número (v29, v30...) para forçar a atualização em todos os aparelhos.
+const CACHE_NAME = 'sistema-descargas-v005'; // <-- Sempre que atualizar o index.html, mude esse número (v29, v30...) para forçar a atualização em todos os aparelhos.
 const ASSETS = [
   './',
   './index.html',
