@@ -180,6 +180,25 @@
   .badge-grao    { background: #e8f0fb; color: #2c5f9e; }
   .badge-semente { background: #d4edda; color: #1a6b35; }
 
+
+  /* VIAGENS DO LOTE */
+  .rc-viagens-link { cursor: pointer; color: var(--accent); text-decoration: underline dotted; text-underline-offset: 2px; }
+  .rc-viagens-link:hover { color: var(--accent2); }
+  #modal-viagens-lote { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; padding: 12px; }
+  .vl-box { background: #fff; border-radius: 10px; width: 100%; max-width: 980px; max-height: 92vh; display: flex; flex-direction: column; padding: 18px; }
+  .vl-box h2 { font-size: 17px; margin-bottom: 2px; } .vl-box h2 small { font-size: 12px; color: var(--muted); font-weight: 400; }
+  .vl-sub { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .vl-legenda { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .vl-chip { display: inline-block; width: 12px; height: 12px; background: #fff3cd; border: 1px solid #e0c36a; vertical-align: middle; }
+  .vl-scroll { overflow: auto; flex: 1; border: 1px solid var(--line); border-radius: 6px; }
+  .vl-tbl { width: 100%; border-collapse: collapse; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+  .vl-tbl th { background: var(--primary); color: #fff; padding: 7px 8px; position: sticky; top: 0; text-align: right; white-space: nowrap; }
+  .vl-tbl td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+  .vl-tbl td:nth-child(-n+5), .vl-tbl th:nth-child(-n+5) { text-align: left; }
+  .vl-tbl tr.vl-hoje td { background: #fff3cd; }
+  .vl-tbl tfoot td { font-weight: 700; background: #eef1f7; position: sticky; bottom: 0; }
+  .vl-acoes { display: flex; gap: 10px; margin-top: 12px; }
+
   #modal-edit { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; }
   .modal-content { background: #fff; padding: 25px; border-radius: 10px; width: 350px; text-align: center; }
 
@@ -188,7 +207,7 @@
 
   @media print {
     @page { margin: 0; size: auto; }
-    header, .tabs, .form-card, #clock, .toast, #tab-config, #tab-historico, #modal-edit, #modal-confirma-reset { display: none !important; }
+    header, .tabs, .form-card, #clock, .toast, #tab-config, #tab-historico, #modal-edit, #modal-confirma-reset, #modal-viagens-lote { display: none !important; }
     #tab-nova { display: block !important; }
     .preview-wrap { padding: 0 !important; margin-top: -12mm !important; }
     .card-print { display: block !important; width: 78mm !important; border: 2px solid #000 !important; }
@@ -269,6 +288,16 @@
     <div style="display:flex; gap:10px;">
       <button class="btn btn-danger" onclick="confirmarReset()">🗑 SIM, LIMPAR TUDO</button>
       <button class="btn" style="background:#ccc;" onclick="fecharModalReset()">CANCELAR</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-viagens-lote">
+  <div class="vl-box">
+    <div id="vl-conteudo" style="display:flex;flex-direction:column;min-height:0;flex:1"></div>
+    <div class="vl-acoes">
+      <button class="btn btn-primary" onclick="imprimirViagensLote('imprimir')">🖨 IMPRIMIR / PDF</button>
+      <button class="btn" style="background:#ccc;" onclick="fecharViagensLote()">FECHAR</button>
     </div>
   </div>
 </div>
@@ -954,6 +983,11 @@ function _registrarValorConhecido(id, valor) {
   updateSelects();
 }
 
+// Sequência da ordem dentro do próprio dia (ex.: 31 = 31ª ordem emitida naquele dia)
+function _seqDiaDe(o) { return db_ordens.filter(x => x.data === o.data && x.id <= o.id).length; }
+function _seqDiaProx(data) { return db_ordens.filter(x => x.data === data).length + 1; }
+function _numTicket(o) { return String(o.num).padStart(4,'0') + '-' + _seqDiaDe(o); }
+
 function sync(ext = null) {
   const d = (ext ? ext.data : document.getElementById('f-data').value).split('-');
   const h = (ext ? ext.hora : document.getElementById('f-hora').value).split(':');
@@ -964,7 +998,7 @@ function sync(ext = null) {
   if(d.length === 3) { document.getElementById('pv-dia').innerText = d[2]; document.getElementById('pv-mes').innerText = d[1]; document.getElementById('pv-ano').innerText = d[0]; }
   if(h.length === 2) { document.getElementById('pv-hh').innerText = h[0]; document.getElementById('pv-mm').innerText = h[1]; }
   
-  document.getElementById('pv-num').innerText = String(ext ? ext.num : contador).padStart(4,'0');
+  document.getElementById('pv-num').innerText = ext ? _numTicket(ext) : String(contador).padStart(4,'0') + '-' + _seqDiaProx(document.getElementById('f-data').value);
   document.getElementById('pv-produto').innerText = ext ? ext.produto : document.getElementById('f-produto').value;
   document.getElementById('pv-um').innerText = (ext ? ext.umidade : document.getElementById('f-um').value) ? (ext ? ext.umidade : document.getElementById('f-um').value) + '%' : "";
   document.getElementById('pv-placa1').innerText = placa.substring(0,3);
@@ -1048,6 +1082,7 @@ async function salvarEImprimir() {
   _lsSet('ultima_cultivar', db_ultima_cultivar);
   await salvarNaPlanilhaAutomatica(o);
 
+  sync(o);
   window.print();
   setTimeout(() => {
     window.print();
@@ -1099,7 +1134,7 @@ function renderHistorico() {
     const posGlobal = doDia.indexOf(o);
     const numVisual = doDia.length - posGlobal; // mais recente = maior número
     return `<tr>
-    <td>#${String(o.num).padStart(4,'0')}${o.editado ? '<span class="tag-editado">EDITADO</span>' : ''}</td>
+    <td><span style="white-space:nowrap">#${_numTicket(o)}</span>${o.editado ? '<span class="tag-editado">EDITADO</span>' : ''}</td>
     <td>${o.data.split('-').reverse().join('/')}<br><small>${o.hora}</small></td>
     <td>${o.placa}</td>
     <td>${o.produto || '-'}${(o.origem || o.cultivar) ? `<br><small style="color:var(--muted); font-size:10px">${[o.origem, o.cultivar].filter(Boolean).join(' · ')}</small>` : ''}</td>
@@ -1163,6 +1198,97 @@ function _pesoComDesconto(o) {
   const liq = parseFloat(o.liquido) || 0;
   const descUmi = buscarDescontoUmidade(o.umidade);
   return liq - (liq * IMPUREZA_PCT / 100) - (liq * descUmi / 100);
+}
+
+// ── Viagens do lote (histórico completo, todas as datas) ─────────────────
+const _escH = (t) => String(t ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// Todas as ordens de uma origem/lote (e tipo grao/semente), em ordem cronológica
+function _viagensDoLote(origem, tipoFiltro) {
+  const origemNorm = (origem || '').trim().toUpperCase();
+  return db_ordens.filter(o => {
+    if ((o.origem || '').trim().toUpperCase() !== origemNorm) return false;
+    if (!tipoFiltro) return true;
+    const tipo = (o.obs || '').toUpperCase().startsWith('SEMENTE') ? 'semente' : 'grao';
+    return tipo === tipoFiltro;
+  }).sort((a, b) => ((a.data + ' ' + a.hora) < (b.data + ' ' + b.hora) ? -1 : (a.data + ' ' + a.hora) > (b.data + ' ' + b.hora) ? 1 : (a.id - b.id)));
+}
+
+// "45 viagens totais / 11 viagens hoje" (clicável quando há origem)
+const viagensHTML = (bucket, origem, tipo) => {
+  const hojeStr = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const dataSel = document.getElementById('filtro-data-historico')?.value;
+  const rotuloDia = (!dataSel || dataSel === hojeStr) ? 'hoje' : 'no dia';
+  const nDia = bucket.ordens;
+  const txtDia = `${nDia} ${nDia !== 1 ? 'viagens' : 'viagem'} ${rotuloDia}`;
+  if (!origem) return `<div class="rc-meta"><span>${txtDia}</span></div>`;
+  const nTot = _viagensDoLote(origem, tipo).length;
+  const txtTot = `${nTot} ${nTot !== 1 ? 'viagens totais' : 'viagem total'}`;
+  const arg = encodeURIComponent(origem).replace(/'/g, '%27');
+  return `<div class="rc-meta"><span class="rc-viagens-link" title="Ver todas as viagens deste lote" onclick="abrirViagensLote(decodeURIComponent('${arg}'),'${tipo}')">${txtTot} / ${txtDia}</span></div>`;
+};
+
+let _viagensLoteAtual = null;
+function abrirViagensLote(origem, tipo) {
+  const lista = _viagensDoLote(origem, tipo);
+  const dataSel = document.getElementById('filtro-data-historico')?.value || '';
+  _viagensLoteAtual = { origem, tipo, lista, dataSel };
+  const tipoTxt = tipo === 'semente' ? '🌱 Semente' : '🌾 Comercial';
+  const cultivares = [...new Set(lista.map(o => (o.cultivar || '').trim()).filter(Boolean))].join(', ');
+  const fmtD = d => (d || '').split('-').reverse().join('/');
+  let totBruto = 0, totTara = 0, totLiq = 0, totFinal = 0;
+  const linhas = lista.map((o, i) => {
+    const liq = parseFloat(o.liquido) || 0, fin = _pesoComDesconto(o);
+    totBruto += parseFloat(o.bruto) || 0; totTara += parseFloat(o.tara) || 0; totLiq += liq; totFinal += fin;
+    const hoje = dataSel && o.data === dataSel;
+    return `<tr class="${hoje ? 'vl-hoje' : ''}">
+      <td>${i + 1}</td><td style="white-space:nowrap">#${_numTicket(o)}</td>
+      <td>${fmtD(o.data)} ${_escH(o.hora)}</td><td>${_escH(o.placa)}</td><td>${_escH(o.motorista || '-')}</td>
+      <td>${fmtInt(o.bruto)}</td><td>${fmtInt(o.tara)}</td><td>${fmtInt(liq)}</td>
+      <td>${o.umidade ? _escH(o.umidade) + '%' : '-'}</td><td><strong>${fmtInt(fin)}</strong></td></tr>`;
+  }).join('');
+  _viagensLoteAtual.titulo = `Viagens - ${origem} (${tipo === 'semente' ? 'Semente' : 'Comercial'})`;
+  _viagensLoteAtual.cabecalho = `<h2>${_escH(origem)} <small>${tipoTxt}</small></h2>
+    <p class="vl-sub">${cultivares ? _escH(cultivares) + ' · ' : ''}${lista.length} ${lista.length !== 1 ? 'viagens' : 'viagem'} · Emitido em ${new Date().toLocaleString('pt-BR')}</p>`;
+  _viagensLoteAtual.tabela = `<table class="vl-tbl"><thead><tr>
+      <th>Seq</th><th>Ordem</th><th>Data/Hora</th><th>Placa</th><th>Motorista</th>
+      <th>Bruto</th><th>Tara</th><th>Líquido</th><th>Umid.</th><th>Líq c/ desc.</th></tr></thead>
+    <tbody>${linhas}</tbody>
+    <tfoot><tr><td colspan="5">TOTAL (${lista.length})</td><td>${fmtInt(totBruto)}</td><td>${fmtInt(totTara)}</td><td>${fmtInt(totLiq)}</td><td></td><td>${fmtInt(totFinal)}</td></tr></tfoot></table>`;
+  document.getElementById('vl-conteudo').innerHTML = _viagensLoteAtual.cabecalho +
+    (dataSel ? '<p class="vl-legenda"><span class="vl-chip"></span> viagens do dia selecionado</p>' : '') +
+    `<div class="vl-scroll">${_viagensLoteAtual.tabela}</div>`;
+  document.getElementById('modal-viagens-lote').style.display = 'flex';
+}
+function fecharViagensLote() { document.getElementById('modal-viagens-lote').style.display = 'none'; }
+
+// Imprime (ou salva como PDF pelo diálogo de impressão) num iframe isolado
+function imprimirViagensLote(modo) {
+  const v = _viagensLoteAtual; if (!v) return;
+  const css = `body{font-family:Arial,sans-serif;color:#1a2744;margin:14mm 10mm}
+    h2{margin:0 0 4px;font-size:18px}h2 small{font-size:12px;color:#555;font-weight:400}
+    .vl-sub{margin:0 0 10px;font-size:11px;color:#555}
+    table{width:100%;border-collapse:collapse;font-size:11px}
+    th,td{border:1px solid #999;padding:4px 6px;text-align:right}
+    th{background:#1a2744;color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    td:nth-child(-n+5),th:nth-child(-n+5){text-align:left}
+    tr.vl-hoje td{background:#fff3cd;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    tfoot td{font-weight:700;background:#eef1f7;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    thead{display:table-header-group}tr{page-break-inside:avoid}@page{size:A4 landscape;margin:8mm}`;
+  const nomeArq = v.titulo.replace(/[\\/:*?"<>|]/g, '');
+  const ifr = document.createElement('iframe');
+  ifr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+  document.body.appendChild(ifr);
+  const d = ifr.contentWindow.document;
+  d.open();
+  d.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${_escH(nomeArq)}</title><style>${css}</style></head><body>${v.cabecalho}${v.tabela}</body></html>`);
+  d.close();
+  setTimeout(() => {
+    ifr.contentWindow.focus();
+    ifr.contentWindow.print();
+    setTimeout(() => ifr.remove(), 2000);
+  }, 300);
+  if (modo === 'pdf') showToast('Na janela de impressão, escolha "Salvar como PDF"');
 }
 
 function renderResumo() {
@@ -1301,6 +1427,7 @@ const produtividadeHTML = (origem, tipoFiltro) => {
   return `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--accent)">${fmtHa} ha - ${fmtScHa} sc/ha</div>`;
 };
 
+
   const ladoHTML = (bucket, tipo, totalGeralLiq, origem) => {
     if (!bucket) return '';
     const isGrao = tipo === 'grao';
@@ -1310,9 +1437,7 @@ const produtividadeHTML = (origem, tipoFiltro) => {
         <div class="rc-peso" style="font-size:17px">${fmtInt(bucket.final)} kg</div>
         ${acumuladoHTML(origem || '', tipo)}
         ${descontoHTML(bucket, 10)}
-        <div class="rc-meta">
-          <span>${bucket.ordens} ${bucket.ordens !== 1 ? 'viagens' : 'viagem'}</span>
-        </div>
+        ${viagensHTML(bucket, origem || '', tipo)}
         ${umidadeHTML(bucket)}
       </div>`;
   };
@@ -1342,9 +1467,7 @@ const produtividadeHTML = (origem, tipoFiltro) => {
         <div class="rc-peso">${fmtInt(bucket.final)} kg</div>
         ${acumuladoHTML(grupo.origem || '', ehSemente ? 'semente' : 'grao')}
         ${descontoHTML(bucket, 11)}
-        <div class="rc-meta">
-          <span>${bucket.ordens} ${bucket.ordens !== 1 ? 'viagens' : 'viagem'}</span>
-        </div>
+        ${viagensHTML(bucket, grupo.origem || '', ehSemente ? 'semente' : 'grao')}
         ${mediaUm ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:${umColor}">${umIcon} Umid. média: ${mediaUm}%</div>` : ''}
         ${produtividadeHTML(grupo.origem, ehSemente ? 'semente' : 'grao')}
       </div>`;
@@ -1417,11 +1540,90 @@ function confirmarEdicao() {
     const nOr = document.getElementById('edit-origem-input').value.trim();
     const nCu = document.getElementById('edit-cultivar-input').value.trim();
     if(o.placa !== nP || o.produto !== nPr || o.umidade !== nU || o.bruto !== nB || o.origem !== nOr || o.cultivar !== nCu) { o.editado = true; }
+    const antes = { data: o.data, hora: o.hora, placa: o.placa, bruto: o.bruto, origem: o.origem, cultivar: o.cultivar, umidade: o.umidade };
     o.placa = nP; o.produto = nPr; o.umidade = nU; o.bruto = nB;
     o.origem = nOr; o.cultivar = nCu;
     o.tara = parseFloat(db_frota[nP]?.tara) || 0; o.liquido = o.bruto - o.tara;
     _lsSet('ordens', db_ordens);
     renderHistorico(); renderGrafico(); fecharModal(); showToast("Atualizado!");
+    _aplicarEdicaoNaPlanilha(antes, o); // se houver planilha vinculada, corrige a linha lá também
+  }
+}
+
+// Aplica na planilha vinculada a correção feita numa ordem no app.
+// "antes" = valores da ordem antes da edição (usados para achar a linha); "o" = ordem já editada.
+async function _aplicarEdicaoNaPlanilha(antes, o) {
+  if (!planilhaHandle) return; // nada vinculado — nada a fazer
+
+  // 1) Ordem ainda na fila (não foi gravada na planilha): só atualiza o registro pendente
+  const idxFila = filaPendentePlanilha.findIndex(x => x.id === o.id);
+  if (idxFila >= 0) {
+    filaPendentePlanilha[idxFila] = { ...o };
+    _lsSet('filaPendentePlanilha', filaPendentePlanilha);
+    return;
+  }
+
+  // 2) Já gravada: espera a fila terminar de gravar (se estiver em andamento) e edita a linha
+  for (let i = 0; i < 25 && _gravandoFila; i++) await new Promise(r => setTimeout(r, 200));
+  _gravandoFila = true;
+  try {
+    const perm = await planilhaHandle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') {
+      _statusPlanilha('⚠️ Permissão de acesso perdida. A correção não foi aplicada na planilha — vincule novamente e edite de novo.', false);
+      return;
+    }
+    const file = await planilhaHandle.getFile();
+    const wb   = new ExcelJS.Workbook();
+    await wb.xlsx.load(await file.arrayBuffer());
+    const ws = wb.getWorksheet('ENTRADA');
+    if (!ws) throw new Error('Aba "ENTRADA" não encontrada no arquivo vinculado.');
+
+    const [ano, mes, dia] = antes.data.split('-').map(Number);
+    const [hh, mm] = (antes.hora || '00:00').split(':').map(Number);
+    const placaAntes = (antes.placa || '').toUpperCase();
+    const brutoAntes = Number(antes.bruto) || 0;
+
+    // Procura a linha: 1ª tentativa com data+hora+placa+bruto; 2ª só com data+placa+bruto
+    let rowAlvo = null, rowFrouxa = null;
+    let r = 4;
+    while (ws.getCell(r, 2).value !== null && ws.getCell(r, 2).value !== undefined && ws.getCell(r, 2).value !== '') {
+      const d = ws.getCell(r, 2).value;
+      const pl = (ws.getCell(r, 3).value || '').toString().toUpperCase();
+      const br = Number(ws.getCell(r, 6).value) || 0;
+      if (d instanceof Date && pl === placaAntes && br === brutoAntes &&
+          d.getUTCFullYear() === ano && (d.getUTCMonth() + 1) === mes && d.getUTCDate() === dia) {
+        if (d.getUTCHours() === (hh || 0) && d.getUTCMinutes() === (mm || 0)) { rowAlvo = r; break; }
+        if (rowFrouxa === null) rowFrouxa = r;
+      }
+      r++;
+    }
+    const linha = rowAlvo ?? rowFrouxa;
+    if (linha === null) {
+      _statusPlanilha('⚠️ Correção não aplicada: não achei essa carga (' + placaAntes + ', ' + fmtInt(brutoAntes) + ' kg) na planilha. Ajuste a linha manualmente.', false);
+      return;
+    }
+
+    ws.getCell(linha, 3).value  = (o.placa || '').toUpperCase(); // C - Placa
+    ws.getCell(linha, 4).value  = o.origem || '';                // D - Fazenda - Talhão
+    ws.getCell(linha, 5).value  = o.cultivar || '';              // E - Cultivar
+    ws.getCell(linha, 6).value  = Number(o.bruto) || 0;          // F - P. Bruto
+    ws.getCell(linha, 7).value  = Number(o.tara) || 0;           // G - P. Tara
+    ws.getCell(linha, 11).value = parseFloat(o.umidade) || 0;    // K - Um. (%)
+    // As demais colunas são fórmulas e recalculam sozinhas.
+
+    wb.calcProperties = wb.calcProperties || {};
+    wb.calcProperties.fullCalcOnLoad = true;
+    const novoBuffer = await wb.xlsx.writeBuffer();
+    const writable   = await planilhaHandle.createWritable();
+    await writable.write(novoBuffer);
+    await writable.close();
+    _statusPlanilha('✅ Correção aplicada na linha ' + linha + ' da planilha às ' + new Date().toLocaleTimeString('pt-BR'), true);
+  } catch (e) {
+    console.error(e);
+    _statusPlanilha('⚠️ Não foi possível aplicar a correção na planilha (arquivo pode estar aberto no Excel). Feche o arquivo e ajuste manualmente.', false);
+    showToast('Corrigido no app, mas NÃO na planilha');
+  } finally {
+    _gravandoFila = false;
   }
 }
 
@@ -1648,7 +1850,7 @@ function _confirmarExcluirOrdem() {
   _lsSet('contador', String(contador));
   // Atualiza badge da nova entrada
   document.getElementById('badge-num').innerText = "#" + String(contador).padStart(4,'0');
-  document.getElementById('pv-num').innerText = String(contador).padStart(4,'0');
+  sync();
   renderHistorico();
   renderGrafico();
   showToast("Registro excluído e sequência corrigida!");
@@ -2283,7 +2485,7 @@ window.addEventListener('keydown', function(e) {
   }
   if (e.key === 'F8') {
     e.preventDefault();
-    capturarBalanca();
+    if (!e.repeat) capturarBalanca();
   }
 });
 
@@ -2297,6 +2499,8 @@ let _balancaPort   = null;
 let _balancaReader = null;
 let _balancaBuffer = '';
 let _balancaConectada = false;
+let _balancaCapturando = false;
+const _BALANCA_CFG = { baudRate: 9600, dataBits: 7, stopBits: 1, parity: 'even', flowControl: 'none' };
 
 function _balancaSetStatus(estado) {
   // estados: 'desconectada' | 'conectada' | 'lendo' | 'erro'
@@ -2306,27 +2510,28 @@ function _balancaSetStatus(estado) {
   btn.className = 'btn-balanca';
   if (estado === 'conectada')    { btn.classList.add('conectada'); label.textContent = '⚖ PRONTA'; }
   else if (estado === 'lendo')   { btn.classList.add('lendo');     label.textContent = '⚖ LENDO...'; }
-  else if (estado === 'erro')    { btn.classList.add('erro');      label.textContent = '⚖ ERRO'; setTimeout(() => _balancaSetStatus('desconectada'), 2000); }
+  else if (estado === 'erro')    { btn.classList.add('erro');      label.textContent = '⚖ ERRO'; setTimeout(() => _balancaSetStatus(_balancaConectada ? 'conectada' : 'desconectada'), 2000); }
   else                           {                                  label.textContent = '⚖ F8'; }
 }
 
+// Abre a porta (se ainda não estiver aberta) e inicia a leitura contínua
+async function _balancaAbrir(port) {
+  if (!port.readable) await port.open(_BALANCA_CFG);
+  _balancaPort = port;
+  _balancaConectada = true;
+  _balancaBuffer = '';
+  _balancaSetStatus('conectada');
+  _balancaLeituraBackground(port);
+}
+
+// Pede ao usuário para escolher a porta (só na 1ª vez; depois o Chrome lembra)
 async function _balancaConectar() {
   try {
     showToast('🔌 Selecione a porta da balança...');
-    _balancaPort = await navigator.serial.requestPort();
-    await _balancaPort.open({
-      baudRate: 9600,
-      dataBits: 7,
-      stopBits: 1,
-      parity:   'even',
-      flowControl: 'none'
-    });
-    _balancaConectada = true;
-    _balancaSetStatus('conectada');
-    showToast('✅ Balança conectada! Pressione F8 para capturar.');
-
-    // Inicia leitura contínua em background para manter o buffer atualizado
-    _balancaLeituraBackground();
+    const port = await navigator.serial.requestPort();
+    await _balancaAbrir(port);
+    showToast('✅ Balança conectada!');
+    return true;
   } catch (err) {
     if (err.name !== 'NotFoundError') {
       _balancaPort = null;
@@ -2334,37 +2539,38 @@ async function _balancaConectar() {
       _balancaSetStatus('erro');
       showToast('❌ Falha ao conectar: ' + (err.message || err));
     }
+    return false;
   }
 }
 
-async function _balancaLeituraBackground() {
+async function _balancaLeituraBackground(port) {
   // Lê continuamente e mantém _balancaBuffer com os dados mais recentes
+  let fechado = Promise.resolve();
   try {
     const decoder = new TextDecoderStream();
-    _balancaPort.readable.pipeTo(decoder.writable).catch(() => {
-      _balancaConectada = false;
-      _balancaSetStatus('desconectada');
-    });
+    fechado = port.readable.pipeTo(decoder.writable).catch(() => {});
     _balancaReader = decoder.readable.getReader();
     while (true) {
       const { value, done } = await _balancaReader.read();
       if (done) break;
       _balancaBuffer += value;
-      // Mantém só os últimos 200 chars para não acumular infinitamente
       if (_balancaBuffer.length > 200) _balancaBuffer = _balancaBuffer.slice(-100);
     }
-  } catch(e) {
+  } catch (e) { /* cabo desconectado ou porta fechada */ }
+  // Saiu do loop: a leitura acabou (cabo solto, balança desligada...)
+  if (_balancaPort === port) {
     _balancaConectada = false;
+    _balancaPort = null;
     _balancaSetStatus('desconectada');
   }
+  try { await fechado; await port.close(); } catch (e) {}
 }
 
 function _balancaParsearBuffer(buf) {
   // Formato: "000000EL_" ou "-00000EL_"
-  const matches = [...buf.matchAll(/([-\s]?\d{5,6})\s*EL/g)];
+  const matches = [...buf.matchAll(/([-+]?\s?\d{1,7})\s*EL/g)];
   if (matches.length === 0) return null;
-  const raw = matches[matches.length - 1][1].trim();
-  const kg  = parseInt(raw, 10);
+  const kg = parseInt(matches[matches.length - 1][1].replace(/\s/g, ''), 10);
   return isNaN(kg) ? null : kg;
 }
 
@@ -2373,43 +2579,63 @@ async function capturarBalanca() {
     showToast('⚠️ Use Chrome ou Edge para leitura da balança.');
     return;
   }
+  if (_balancaCapturando) return;
 
-  // Se não conectada ainda, conecta primeiro
+  // Se não conectada ainda, conecta e já captura em seguida
   if (!_balancaConectada || !_balancaPort) {
-    await _balancaConectar();
-    return;
+    const ok = await _balancaConectar();
+    if (!ok) return;
   }
 
-  // Já conectada: captura o peso atual do buffer
-  _balancaSetStatus('lendo');
-  _balancaBuffer = ''; // limpa buffer para aguardar leitura fresca
+  _balancaCapturando = true;
+  try {
+    _balancaSetStatus('lendo');
+    _balancaBuffer = ''; // descarta leitura antiga e espera uma nova
 
-  // Aguarda até 2s por uma leitura válida
-  const peso = await new Promise(resolve => {
-    const inicio = Date.now();
-    const intervalo = setInterval(() => {
-      const kg = _balancaParsearBuffer(_balancaBuffer);
-      if (kg !== null) {
-        clearInterval(intervalo);
-        resolve(kg);
-        return;
-      }
-      if (Date.now() - inicio > 2000) {
-        clearInterval(intervalo);
-        resolve(null);
-      }
-    }, 50);
+    // Aguarda até 3s por uma leitura válida
+    const peso = await new Promise(resolve => {
+      const inicio = Date.now();
+      const intervalo = setInterval(() => {
+        const kg = _balancaParsearBuffer(_balancaBuffer);
+        if (kg !== null) { clearInterval(intervalo); resolve(kg); return; }
+        if (!_balancaConectada || Date.now() - inicio > 3000) { clearInterval(intervalo); resolve(null); }
+      }, 50);
+    });
+
+    if (peso !== null && peso > 0) {
+      document.getElementById('f-peso').value = peso;
+      sync();
+      _balancaSetStatus('conectada');
+      showToast('⚖ Capturado: ' + peso.toLocaleString('pt-BR') + ' kg');
+    } else if (peso !== null) {
+      _balancaSetStatus('conectada');
+      showToast('⚠️ Balança com peso zerado/negativo (' + peso + '). Aguarde estabilizar e tente de novo.');
+    } else {
+      const raw = _balancaBuffer;
+      console.warn('Balança: sem leitura válida. Buffer recebido:', JSON.stringify(raw));
+      _balancaSetStatus(_balancaConectada ? 'erro' : 'desconectada');
+      showToast(!_balancaConectada
+        ? '⚠️ Balança desconectada. Verifique o cabo e aperte F8 para reconectar.'
+        : raw
+          ? '⚠️ Dados fora do formato esperado: ' + JSON.stringify(raw.slice(-24))
+          : '⚠️ Nenhum dado recebido da balança. Verifique cabo/porta e tente novamente.');
+    }
+  } finally {
+    _balancaCapturando = false;
+  }
+}
+
+// Reconecta sozinho ao abrir o app (se só houver 1 porta já autorizada) e ao religar o cabo
+if ('serial' in navigator) {
+  (async () => {
+    try {
+      const portas = await navigator.serial.getPorts();
+      if (portas.length === 1) await _balancaAbrir(portas[0]);
+    } catch (e) { console.warn('Reconexão automática da balança falhou:', e); }
+  })();
+  navigator.serial.addEventListener('connect', (ev) => {
+    if (!_balancaConectada) _balancaAbrir(ev.target).catch(() => {});
   });
-
-  if (peso !== null) {
-    document.getElementById('f-peso').value = peso;
-    sync();
-    _balancaSetStatus('conectada');
-    showToast('⚖ Capturado: ' + peso.toLocaleString('pt-BR') + ' kg');
-  } else {
-    _balancaSetStatus('erro');
-    showToast('⚠️ Sem leitura da balança. Verifique o cabo e tente novamente.');
-  }
 }
 
 </script>
