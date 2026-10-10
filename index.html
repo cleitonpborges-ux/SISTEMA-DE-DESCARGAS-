@@ -2526,6 +2526,7 @@ async function _balancaAbrir(port) {
   try { await port.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch (e) {}
   _balancaPort = port;
   _balancaConectada = true;
+  _balancaUltimoErro = '';
   _balancaBuffer = '';
   _balancaSetStatus('conectada');
   _balancaLoop = _balancaLeituraBackground(port);
@@ -2561,25 +2562,37 @@ async function _balancaConectar() {
   }
 }
 
+let _balancaUltimoErro = '';
 async function _balancaLeituraBackground(port) {
-  // Lê bytes continuamente e mantém _balancaBuffer com os dados mais recentes
-  let reader = null;
-  try {
-    reader = port.readable.getReader();
-    _balancaReader = reader;
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      if (value && value.length) {
-        let t = '';
-        for (const byte of value) t += String.fromCharCode(byte & 0x7F); // ignora bit de paridade
-        _balancaBuffer += t;
-        if (_balancaBuffer.length > 200) _balancaBuffer = _balancaBuffer.slice(-100);
+  // Lê bytes continuamente e mantém _balancaBuffer com os dados mais recentes.
+  // Erros NÃO fatais (paridade, enquadramento, overrun, break) só interrompem o reader
+  // atual: o Chrome cria um novo em port.readable e seguimos lendo, como faz o Hercules.
+  // Só um erro fatal (cabo arrancado) deixa port.readable nulo e encerra o loop.
+  let parar = false;
+  while (!parar && port.readable && _balancaPort === port) {
+    let reader = null;
+    try {
+      reader = port.readable.getReader();
+      _balancaReader = reader;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) { parar = true; break; }
+        if (value && value.length) {
+          let t = '';
+          for (const byte of value) t += String.fromCharCode(byte & 0x7F); // ignora bit de paridade
+          _balancaBuffer += t;
+          if (_balancaBuffer.length > 200) _balancaBuffer = _balancaBuffer.slice(-100);
+        }
       }
+    } catch (e) {
+      _balancaUltimoErro = (e && e.name) ? e.name : String(e);
+      console.warn('Balança: erro de leitura (' + _balancaUltimoErro + ')', e);
+      await new Promise(r => setTimeout(r, 50));
+    } finally {
+      try { reader && reader.releaseLock(); } catch (e) {}
     }
-  } catch (e) { /* cabo desconectado ou porta fechada */ }
-  try { reader && reader.releaseLock(); } catch (e) {}
-  // Saiu do loop: a leitura acabou (cabo solto, balança desligada...)
+  }
+  // Saiu do loop: a leitura acabou de vez (cabo solto, balança desligada...)
   if (_balancaPort === port) {
     _balancaConectada = false;
     _balancaPort = null;
@@ -2643,7 +2656,7 @@ async function capturarBalanca() {
       } else {
         _balancaSetStatus(_balancaConectada ? 'erro' : 'desconectada');
         showToast(!_balancaConectada
-          ? '⚠️ Balança desconectada. Verifique o cabo e aperte F8 para reconectar.'
+          ? '⚠️ Balança desconectada' + (_balancaUltimoErro ? ' (' + _balancaUltimoErro + ')' : '') + '. Verifique o cabo e aperte F8 para reconectar.'
           : '⚠️ Dados fora do formato esperado: ' + JSON.stringify(raw.slice(-24)));
       }
     }
