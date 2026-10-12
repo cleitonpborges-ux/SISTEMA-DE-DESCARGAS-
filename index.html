@@ -199,6 +199,20 @@
   .vl-tbl tfoot td { font-weight: 700; background: #eef1f7; position: sticky; bottom: 0; }
   .vl-acoes { display: flex; gap: 10px; margin-top: 12px; }
 
+
+  /* CONFIG: sub-abas + TICKET AVULSO */
+  .cfg-subnav { display: flex; gap: 6px; margin-bottom: 18px; border-bottom: 2px solid var(--line); }
+  .cfg-subbtn { background: none; border: none; font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 700; color: var(--muted); padding: 10px 16px; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+  .cfg-subbtn.active { color: var(--primary); border-bottom-color: var(--accent2); }
+  .ta-grid { display: grid; grid-template-columns: minmax(300px, 1fr) auto; gap: 24px; align-items: start; }
+  @media (max-width: 900px) { .ta-grid { grid-template-columns: 1fr; } }
+  .ta-grid .field input, .ta-grid .field textarea { width: 100%; padding: 10px; border: 1.5px solid var(--line); border-radius: 6px; font-family: inherit; font-size: 14px; text-transform: uppercase; }
+  .ta-grid .field input[readonly] { background: #eef1f7; font-weight: 700; }
+  .ta-peso { display: flex; gap: 6px; }
+  .ta-peso button { white-space: nowrap; border: none; border-radius: 6px; background: var(--accent2); color: #fff; font-weight: 700; padding: 0 12px; cursor: pointer; }
+  .ta-preview-wrap { background: #e9ecf3; border-radius: 8px; padding: 16px; overflow-x: auto; }
+  .ta-preview-wrap .ta-paper { background: #fff; padding: 0; width: max-content; margin: 0 auto; box-shadow: 0 1px 6px rgba(0,0,0,.25); }
+
   #modal-edit { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; }
   .modal-content { background: #fff; padding: 25px; border-radius: 10px; width: 350px; text-align: center; }
 
@@ -569,6 +583,11 @@
   </div>
 
   <div id="tab-config" class="section">
+    <div class="cfg-subnav">
+      <button class="cfg-subbtn active" id="cfgbtn-geral" onclick="cfgSubTab('geral')">Geral</button>
+      <button class="cfg-subbtn" id="cfgbtn-avulso" onclick="cfgSubTab('avulso')">Ticket Avulso</button>
+    </div>
+    <div id="cfg-geral">
     <!-- BACKUP: exportar/importar todos os dados do sistema (útil antes de reinstalar o app ou trocar de aparelho) -->
     <div style="margin-bottom:24px;">
       <div class="form-card">
@@ -649,6 +668,50 @@
             </thead>
             <tbody></tbody>
           </table></div>
+        </div>
+      </div>
+    </div>
+    </div><!-- /cfg-geral -->
+    <!-- TICKET AVULSO: ticket de pesagem igual ao da balança, para preencher e imprimir -->
+    <div id="cfg-avulso" style="display:none;">
+      <div class="ta-grid">
+        <div class="form-card">
+          <div class="form-header"><h2>TICKET AVULSO</h2></div>
+          <div class="form-body">
+            <div class="form-row cols-2">
+              <div class="field"><label>Data</label><input type="date" id="ta-data" oninput="taAtualizar()"></div>
+              <div class="field"><label>Hora</label><input type="time" id="ta-hora" oninput="taAtualizar()"></div>
+            </div>
+            <div class="form-row cols-2">
+              <div class="field"><label>Placa</label><input type="text" id="ta-placa" list="dl-ta-placas" autocomplete="off" oninput="taPlacaMudou()"><datalist id="dl-ta-placas"></datalist></div>
+              <div class="field"><label>Motorista</label><input type="text" id="ta-motorista" list="dl-ta-motoristas" autocomplete="off" oninput="taAtualizar()"><datalist id="dl-ta-motoristas"></datalist></div>
+            </div>
+            <div class="form-row">
+              <div class="field"><label>Produto</label><input type="text" id="ta-produto" list="dl-ta-produtos" placeholder="Ex: 31 - ALGODAO EM PLUMA AVU" oninput="taAtualizar()"><datalist id="dl-ta-produtos"></datalist></div>
+            </div>
+            <div class="form-row">
+              <div class="field"><label>Clifor</label><input type="text" id="ta-clifor" list="dl-ta-clifors" autocomplete="off" placeholder="Ex: 0122157 - ED&F MAN BRASIL LTDA" oninput="taAtualizar()"><datalist id="dl-ta-clifors"></datalist></div>
+            </div>
+            <div class="form-row">
+              <div class="field"><label>Observação</label><input type="text" id="ta-obs" list="dl-ta-obs" autocomplete="off" oninput="taAtualizar()"><datalist id="dl-ta-obs"></datalist></div>
+            </div>
+            <div class="form-row cols-2">
+              <div class="field"><label>Peso entrada (kg)</label><div class="ta-peso"><input type="number" id="ta-entrada" min="0" oninput="taAtualizar()"><button type="button" title="Capturar da balança" onclick="capturarBalanca('ta-entrada')">⚖</button></div></div>
+              <div class="field"><label>Peso saída (kg)</label><div class="ta-peso"><input type="number" id="ta-saida" min="0" oninput="taAtualizar()"><button type="button" title="Capturar da balança" onclick="capturarBalanca('ta-saida')">⚖</button></div></div>
+            </div>
+            <div class="form-row cols-2">
+              <div class="field"><label>Peso líquido (kg) — automático</label><input type="text" id="ta-liquido" readonly></div>
+              <div class="field"><label>Tipo de operação</label><input type="text" id="ta-tipo" value="PESAGEM AVULSA" oninput="taAtualizar()"></div>
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+              <button class="btn btn-primary" style="width:auto; padding:12px 22px;" onclick="taImprimir()">🖨 IMPRIMIR TICKET</button>
+              <button class="btn" style="width:auto; padding:12px 22px; background:#ccc;" onclick="taLimpar()">LIMPAR</button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:700; color:var(--muted); margin-bottom:6px;">PRÉ-VISUALIZAÇÃO</div>
+          <div class="ta-preview-wrap"><div class="ta-paper" id="ta-preview"></div></div>
         </div>
       </div>
     </div>
@@ -797,6 +860,190 @@ let filaPendentePlanilha = _lsGet(VERSAO_ATUAL + 'filaPendentePlanilha', []); //
 
 function fmt(num) { if (!num || isNaN(num)) return ""; return Number(num).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
 function fmtInt(num) { return Number(num).toLocaleString('pt-BR', {minimumFractionDigits: 0, maximumFractionDigits: 0}); }
+
+// ─── TICKET AVULSO ───────────────────────────────────────────────────────────
+function cfgSubTab(nome) {
+  document.getElementById('cfg-geral').style.display  = nome === 'geral'  ? '' : 'none';
+  document.getElementById('cfg-avulso').style.display = nome === 'avulso' ? '' : 'none';
+  document.getElementById('cfgbtn-geral').classList.toggle('active',  nome === 'geral');
+  document.getElementById('cfgbtn-avulso').classList.toggle('active', nome === 'avulso');
+  if (nome === 'avulso') taIniciar();
+}
+
+function _taAgora() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return { data: d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()), hora: p(d.getHours()) + ':' + p(d.getMinutes()) };
+}
+
+// ─── HISTÓRICO DE PREENCHIMENTO (sugestões) ─────────────────────────────────
+// Guarda o que já foi impresso (produto, clifor, observação, motorista e placa→motorista)
+// para aparecer como sugestão ao digitar. Fica junto dos demais dados (entra no backup).
+function _taHist() {
+  let h = {};
+  try { h = JSON.parse(localStorage.getItem(VERSAO_ATUAL + 'ta_hist') || '{}') || {}; } catch (e) { h = {}; }
+  ['produto','clifor','obs','motorista','placa'].forEach(k => { if (!Array.isArray(h[k])) h[k] = []; });
+  if (!h.pm || typeof h.pm !== 'object') h.pm = {};
+  return h;
+}
+function _taHistSalvar() {
+  try {
+    const h = _taHist();
+    const v = id => document.getElementById(id).value.trim().replace(/\s+/g, ' ').toUpperCase();
+    const add = (k, val) => { if (!val) return; h[k] = [val].concat(h[k].filter(x => x !== val)).slice(0, 200); };
+    add('produto', v('ta-produto')); add('clifor', v('ta-clifor')); add('obs', v('ta-obs'));
+    add('motorista', v('ta-motorista')); add('placa', v('ta-placa'));
+    if (v('ta-placa') && v('ta-motorista')) h.pm[v('ta-placa')] = v('ta-motorista');
+    _lsSet('ta_hist', h);
+  } catch (e) { console.warn('Histórico do ticket avulso não salvo', e); }
+}
+function _taOpcoes(id, lista) {
+  document.getElementById(id).innerHTML = lista.map(x => `<option value="${_escH(x)}"></option>`).join('');
+}
+function _taAtualizarSugestoes() {
+  const h = _taHist();
+  const uniq = a => [...new Set(a)];
+  _taOpcoes('dl-ta-placas',     uniq(Object.keys(db_frota).concat(h.placa)).sort());
+  _taOpcoes('dl-ta-produtos',   uniq(h.produto.concat([...db_produtos])));
+  _taOpcoes('dl-ta-clifors',    h.clifor);
+  _taOpcoes('dl-ta-obs',        h.obs);
+  _taOpcoes('dl-ta-motoristas', uniq(h.motorista.concat(Object.values(db_frota).map(f => f && f.motorista).filter(Boolean))));
+}
+
+function taIniciar() {
+  if (!document.getElementById('ta-data').value || !document.getElementById('ta-hora').value) {
+    const ag = _taAgora();
+    document.getElementById('ta-data').value = ag.data;
+    document.getElementById('ta-hora').value = ag.hora;
+  }
+  _taAtualizarSugestoes();
+  taAtualizar();
+}
+
+function taPlacaMudou() {
+  const placa = document.getElementById('ta-placa').value.trim().toUpperCase();
+  const mot = (db_frota[placa] && db_frota[placa].motorista) || _taHist().pm[placa];
+  if (mot && !document.getElementById('ta-motorista').value.trim()) document.getElementById('ta-motorista').value = mot;
+  taAtualizar();
+}
+
+function taLimpar() {
+  ['ta-placa','ta-motorista','ta-produto','ta-clifor','ta-obs','ta-entrada','ta-saida'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('ta-tipo').value = 'PESAGEM AVULSA';
+  const ag = _taAgora();
+  document.getElementById('ta-data').value = ag.data;
+  document.getElementById('ta-hora').value = ag.hora;
+  taAtualizar();
+}
+
+// Texto em CAIXA ALTA e sem acentos, igual ao ticket da balança
+function _taTxt(t) { return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim(); }
+
+function _taDados() {
+  const v = id => document.getElementById(id).value;
+  const ent = v('ta-entrada') === '' ? null : Math.round(Number(v('ta-entrada')));
+  const sai = v('ta-saida')   === '' ? null : Math.round(Number(v('ta-saida')));
+  const liq = (ent !== null && sai !== null) ? Math.abs(sai - ent) : null;
+  return {
+    data: (v('ta-data') || '').split('-').reverse().join('/'), hora: v('ta-hora'),
+    placa: _taTxt(v('ta-placa')), produto: _taTxt(v('ta-produto')), clifor: _taTxt(v('ta-clifor')),
+    obs: _taTxt(v('ta-obs')).replace(/\s*\n\s*/g, ' '), motorista: _taTxt(v('ta-motorista')),
+    ent, sai, liq, tipo: _taTxt(v('ta-tipo'))
+  };
+}
+
+// HTML do ticket (usado na pré-visualização e na impressão)
+function taTicketHTML() {
+  const d = _taDados();
+  const kg = n => n === null ? '' : n + ' KG';
+  const lab = (t, n) => t.padStart(13, ' ');
+  // O zero do ticket da balança é liso, com o mesmo desenho da letra O (sem barra/ponto como nas fontes de computador).
+  // Só no texto impresso: os dados e o nome do arquivo continuam com o número 0 normal.
+  const e = v => _escH(String(v ?? '').replace(/0/g, 'O'));
+  const topo = 'DATA: ' + e(d.data) + '<span class="ta-gap"></span>HORA: ' + e(d.hora);
+  const pesos = ' ' + lab('PESO ENTRADA:') + ' ' + kg(d.ent) + '\n' + ' ' + lab('PESO SAIDA:') + ' ' + kg(d.sai) + '\n' + ' ' + lab('PESO LIQUIDO:') + ' ' + kg(d.liq);
+  return `<div class="ta-ticket"><div class="ta-in" style="--ta-sx:${_taEscalaX()}">
+<div class="ta-dash"></div>
+<div class="ta-top">${topo}</div>
+<div class="ta-blk">PLACA: ${e(d.placa)}
+PRODUTO: ${e(d.produto)}
+ CLIFOR: ${e(d.clifor)}
+OBSERVACAO: ${e(d.obs)}
+MOTORISTA: ${e(d.motorista)}</div>
+<div class="ta-blk ta-pesos">${e(pesos)}</div>
+<div class="ta-blk ta-fim">TIPO DE OPERACAO: ${e(d.tipo)}</div>
+<div class="ta-ass a1"><span>ASS. BALANCEIRO : </span><i></i></div>
+<div class="ta-ass"><span>ASS. MOTORISTA  : </span><i></i></div>
+</div><div class="ta-mark"></div></div>`;
+}
+
+// Fonte sem serifa e monoespaçada, alta e fina como a da bobina (Consolas no Windows)
+const _TA_FONT = "'TicketMono', 'Overpass Mono', 'Consolas', 'DejaVu Sans Mono', monospace"; // Overpass Mono 500 embutida (mesmo desenho da fonte da bobina)
+const _TA_FS = '3.677mm';
+const _TA_SX = '0.6743';
+const _TA_FACE = `@font-face{font-family:'TicketMono';font-weight:400;font-style:normal;src:url(data:font/woff2;base64,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) format('woff2');}`;
+const _TA_PASSO_MM = 1.58; // largura de cada caractere no ticket original (mm)
+
+// Mede a fonte disponível e calcula quanto comprimir na horizontal para cada caractere ter _TA_PASSO_MM
+let _taEscalaCache = null;
+function _taEscalaX() {
+  return _TA_SX;
+  if (_taEscalaCache) return _taEscalaCache;
+  const sp = document.createElement('span');
+  sp.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;font-weight:400;font-size:3.6mm;font-family:' + _TA_FONT;
+  sp.textContent = 'M'.repeat(40);
+  document.body.appendChild(sp);
+  const larguraMm = (sp.getBoundingClientRect().width / 40) * 25.4 / 96;
+  sp.remove();
+  _taEscalaCache = larguraMm > 0 ? Math.min(1.3, Math.max(0.5, _TA_PASSO_MM / larguraMm)).toFixed(4) : '0.85';
+  return _taEscalaCache;
+}
+
+const _TA_CSS = _TA_FACE + `
+  /* Tira de 72 x 96 mm (largura útil da bobina de 80 mm). Letra alta (3,6mm) e fina, comprimida na horizontal (~39 caracteres por linha). */
+  .ta-ticket { position: relative; width: 72mm; min-height: 96mm; box-sizing: border-box; padding: 6mm 0 8mm 0.4mm; overflow: hidden; background: #fff; }
+  .ta-mark { position: absolute; left: 50%; margin-left: -3mm; bottom: 2mm; width: 6mm; height: 0; border-top: 0.5mm solid #000; } /* traço mínimo (borda, não fundo: o Chrome não imprime fundos por padrão). A bobina só avança até o último ponto impresso, então isto garante o espaço em branco do fim */
+  .ta-in { width: 39ch; transform: scaleX(var(--ta-sx, 0.85)); transform-origin: 0 0; font-family: ${_TA_FONT}; font-size: ${_TA_FS}; font-weight: 400; color: #000; line-height: 1.006; text-transform: uppercase; }
+  .ta-dash { border-top: 0.4mm dashed #111; height: 0; margin-bottom: 0.4em; }
+  .ta-top { display: flex; justify-content: space-between; margin-bottom: 1.1em; }
+  .ta-gap { display: inline-block; width: 6ch; }
+  .ta-blk { white-space: pre-wrap; word-break: break-word; margin-bottom: 1.1em; }
+  .ta-pesos { white-space: pre; }
+  .ta-fim { margin-bottom: 0; }
+  .ta-ass { display: flex; align-items: flex-end; height: 11mm; }
+  .ta-ass.a1 { height: 6.7mm; }
+  .ta-ass span { white-space: pre; }
+  .ta-ass i { flex: 1; border-bottom: 0.3mm solid #111; margin-bottom: 0.6mm; }
+`;
+
+function taAtualizar() {
+  const d = _taDados();
+  document.getElementById('ta-liquido').value = d.liq === null ? '' : d.liq + ' KG';
+  let st = document.getElementById('ta-css');
+  if (!st) { st = document.createElement('style'); st.id = 'ta-css'; st.textContent = _TA_CSS; document.head.appendChild(st); }
+  document.getElementById('ta-preview').innerHTML = taTicketHTML();
+}
+
+function taImprimir() {
+  _taHistSalvar(); _taAtualizarSugestoes();
+  const d = _taDados();
+  const nomeArq = 'Ticket de balança - placa - ' + (d.placa || 'SEM PLACA') + ' - ' + (d.data || '').replace(/\//g, '_');
+  const ifr = document.createElement('iframe');
+  ifr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+  document.body.appendChild(ifr);
+  const doc = ifr.contentWindow.document;
+  doc.open();
+  doc.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${_escH(nomeArq)}</title><style>
+    @page { margin: 0; } html, body { margin: 0; } ${_TA_CSS}</style></head><body>${taTicketHTML()}</body></html>`);
+  doc.close();
+  const _go = () => setTimeout(() => {
+    ifr.contentWindow.focus();
+    ifr.contentWindow.print();
+    setTimeout(() => ifr.remove(), 2000);
+  }, 300);
+  // espera a fonte do ticket carregar antes de imprimir
+  try { ifr.contentWindow.document.fonts.load("12px TicketMono").then(() => ifr.contentWindow.document.fonts.ready).then(_go, _go); } catch (e) { _go(); }
+}
 
 function showTab(tab) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
@@ -1283,11 +1530,13 @@ function imprimirViagensLote(modo) {
   d.open();
   d.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${_escH(nomeArq)}</title><style>${css}</style></head><body>${v.cabecalho}${v.tabela}</body></html>`);
   d.close();
-  setTimeout(() => {
+  const _go = () => setTimeout(() => {
     ifr.contentWindow.focus();
     ifr.contentWindow.print();
     setTimeout(() => ifr.remove(), 2000);
   }, 300);
+  // espera a fonte do ticket carregar antes de imprimir
+  try { ifr.contentWindow.document.fonts.load("12px TicketMono").then(() => ifr.contentWindow.document.fonts.ready).then(_go, _go); } catch (e) { _go(); }
   if (modo === 'pdf') showToast('Na janela de impressão, escolha "Salvar como PDF"');
 }
 
@@ -2608,7 +2857,8 @@ function _balancaParsearBuffer(buf) {
 
 // A porta só é aberta durante a captura (F8) e liberada logo depois,
 // para que outros sistemas possam usar a COM4 no resto do tempo.
-async function capturarBalanca() {
+async function capturarBalanca(destinoId) {
+  if (typeof destinoId !== 'string') destinoId = 'f-peso'; // F8 chama sem argumento
   if (!('serial' in navigator)) {
     showToast('⚠️ Use Chrome ou Edge para leitura da balança.');
     return;
@@ -2650,8 +2900,9 @@ async function capturarBalanca() {
     });
 
     if (peso !== null && peso > 0) {
-      document.getElementById('f-peso').value = peso;
-      sync();
+      document.getElementById(destinoId).value = peso;
+      if (destinoId === 'f-peso') sync();
+      else document.getElementById(destinoId).dispatchEvent(new Event('input', { bubbles: true }));
       estadoFinal = 'conectada'; // acende a bolinha rapidamente para confirmar a leitura
       showToast('⚖ Capturado: ' + peso.toLocaleString('pt-BR') + ' kg');
     } else if (peso !== null) {
