@@ -2486,7 +2486,7 @@ window.addEventListener('keydown', function(e) {
   if (e.key === 'F8') {
     e.preventDefault();
     if (!e.repeat) {
-      if (e.shiftKey) _balancaDesconectar(true).then(capturarBalanca); // Shift+F8: escolher outra porta
+      if (e.shiftKey) _balancaTrocarPorta().then(capturarBalanca); // Shift+F8: escolher outra porta
       else capturarBalanca();
     }
   }
@@ -2543,23 +2543,20 @@ async function _balancaDesconectar(esquecer) {
   _balancaSetStatus('desconectada');
 }
 
-// Pede ao usuário para escolher a porta (só na 1ª vez; depois o Chrome lembra)
-async function _balancaConectar() {
+// Devolve a porta da balança: usa a já autorizada (COM4 "Emparelhado") ou pede para escolher
+async function _balancaObterPorta() {
+  const portas = await navigator.serial.getPorts();
+  if (portas.length === 1) return portas[0];
+  showToast('🔌 Selecione a porta da balança...');
+  return await navigator.serial.requestPort(); // lança NotFoundError se o usuário cancelar
+}
+
+// Esquece as portas autorizadas, para o próximo F8 mostrar a lista de novo
+async function _balancaTrocarPorta() {
   try {
-    showToast('🔌 Selecione a porta da balança...');
-    const port = await navigator.serial.requestPort();
-    await _balancaAbrir(port);
-    showToast('✅ Balança conectada!');
-    return true;
-  } catch (err) {
-    if (err.name !== 'NotFoundError') {
-      _balancaPort = null;
-      _balancaConectada = false;
-      _balancaSetStatus('erro');
-      showToast('❌ Falha ao conectar: ' + (err.message || err));
-    }
-    return false;
-  }
+    const portas = await navigator.serial.getPorts();
+    for (const p of portas) { try { await p.forget(); } catch (e) {} }
+  } catch (e) {}
 }
 
 let _balancaUltimoErro = '';
@@ -2609,23 +2606,38 @@ function _balancaParsearBuffer(buf) {
   return isNaN(kg) ? null : kg;
 }
 
+// A porta só é aberta durante a captura (F8) e liberada logo depois,
+// para que outros sistemas possam usar a COM4 no resto do tempo.
 async function capturarBalanca() {
   if (!('serial' in navigator)) {
     showToast('⚠️ Use Chrome ou Edge para leitura da balança.');
     return;
   }
   if (_balancaCapturando) return;
-
-  // Se não conectada ainda, conecta e já captura em seguida
-  if (!_balancaConectada || !_balancaPort) {
-    const ok = await _balancaConectar();
-    if (!ok) return;
-  }
-
   _balancaCapturando = true;
+
+  let abriu = false, esquecer = false, estadoFinal = 'desconectada';
   try {
+    let port;
+    try {
+      port = await _balancaObterPorta();
+    } catch (err) {
+      if (err.name !== 'NotFoundError') showToast('❌ Falha ao localizar a porta: ' + (err.message || err));
+      return; // cancelou a escolha da porta
+    }
+
+    try {
+      await _balancaAbrir(port);
+      abriu = true;
+    } catch (err) {
+      console.warn('Balança: falha ao abrir a porta', err);
+      estadoFinal = 'erro';
+      showToast('❌ Não consegui abrir a porta. Ela pode estar em uso por outro programa (feche-o e tente de novo).');
+      return;
+    }
+
     _balancaSetStatus('lendo');
-    _balancaBuffer = ''; // descarta leitura antiga e espera uma nova
+    _balancaBuffer = '';
 
     // Aguarda até 3s por uma leitura válida
     const peso = await new Promise(resolve => {
@@ -2640,42 +2652,29 @@ async function capturarBalanca() {
     if (peso !== null && peso > 0) {
       document.getElementById('f-peso').value = peso;
       sync();
-      _balancaSetStatus('conectada');
+      estadoFinal = 'conectada'; // acende a bolinha rapidamente para confirmar a leitura
       showToast('⚖ Capturado: ' + peso.toLocaleString('pt-BR') + ' kg');
     } else if (peso !== null) {
-      _balancaSetStatus('conectada');
       showToast('⚠️ Balança com peso zerado/negativo (' + peso + '). Aguarde estabilizar e tente de novo.');
     } else {
       const raw = _balancaBuffer;
       console.warn('Balança: sem leitura válida. Buffer recebido:', JSON.stringify(raw));
-      if (_balancaConectada && !raw) {
-        // Porta aberta mas calada: provavelmente é a porta errada. Libera para escolher de novo.
-        await _balancaDesconectar(true);
-        _balancaSetStatus('erro');
-        showToast('⚠️ Nenhum dado nessa porta. Feche o Hercules/outros programas, aperte F8 e escolha a porta da balança (COM4).');
+      estadoFinal = 'erro';
+      if (!_balancaConectada) {
+        showToast('⚠️ Balança desconectada' + (_balancaUltimoErro ? ' (' + _balancaUltimoErro + ')' : '') + '. Verifique o cabo e aperte F8 de novo.');
+      } else if (!raw) {
+        esquecer = true; // porta calada: provavelmente errada, pergunta de novo no próximo F8
+        showToast('⚠️ Nenhum dado nessa porta. Aperte F8 e escolha a porta da balança (COM4).');
       } else {
-        _balancaSetStatus(_balancaConectada ? 'erro' : 'desconectada');
-        showToast(!_balancaConectada
-          ? '⚠️ Balança desconectada' + (_balancaUltimoErro ? ' (' + _balancaUltimoErro + ')' : '') + '. Verifique o cabo e aperte F8 para reconectar.'
-          : '⚠️ Dados fora do formato esperado: ' + JSON.stringify(raw.slice(-24)));
+        showToast('⚠️ Dados fora do formato esperado: ' + JSON.stringify(raw.slice(-24)));
       }
     }
   } finally {
+    if (abriu) await _balancaDesconectar(esquecer); // libera a porta
     _balancaCapturando = false;
+    _balancaSetStatus(estadoFinal);
+    if (estadoFinal === 'conectada') setTimeout(() => _balancaSetStatus('desconectada'), 1500);
   }
-}
-
-// Reconecta sozinho ao abrir o app (se só houver 1 porta já autorizada) e ao religar o cabo
-if ('serial' in navigator) {
-  (async () => {
-    try {
-      const portas = await navigator.serial.getPorts();
-      if (portas.length === 1) await _balancaAbrir(portas[0]);
-    } catch (e) { console.warn('Reconexão automática da balança falhou:', e); }
-  })();
-  navigator.serial.addEventListener('connect', (ev) => {
-    if (!_balancaConectada) _balancaAbrir(ev.target).catch(() => {});
-  });
 }
 
 </script>
