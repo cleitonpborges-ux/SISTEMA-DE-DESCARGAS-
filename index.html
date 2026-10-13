@@ -13,6 +13,7 @@
 <title>Sistema de Descargas - v27</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700;800&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -1822,10 +1823,7 @@ async function _aplicarEdicaoNaPlanilha(antes, o) {
       return;
     }
     const file = await planilhaHandle.getFile();
-    const wb   = new ExcelJS.Workbook();
-    await wb.xlsx.load(await file.arrayBuffer());
-    const ws = wb.getWorksheet('ENTRADA');
-    if (!ws) throw new Error('Aba "ENTRADA" não encontrada no arquivo vinculado.');
+    const ws = await _abrirAbaEntrada(await file.arrayBuffer());
 
     const [ano, mes, dia] = antes.data.split('-').map(Number);
     const [hh, mm] = (antes.hora || '00:00').split(':').map(Number);
@@ -1860,9 +1858,7 @@ async function _aplicarEdicaoNaPlanilha(antes, o) {
     ws.getCell(linha, 11).value = parseFloat(o.umidade) || 0;    // K - Um. (%)
     // As demais colunas são fórmulas e recalculam sozinhas.
 
-    wb.calcProperties = wb.calcProperties || {};
-    wb.calcProperties.fullCalcOnLoad = true;
-    const novoBuffer = await wb.xlsx.writeBuffer();
+    const novoBuffer = await ws.salvar();
     const writable   = await planilhaHandle.createWritable();
     await writable.write(novoBuffer);
     await writable.close();
@@ -1959,10 +1955,7 @@ async function _atualizarTaraNaPlanilha(placa, dataISO, novaTara) {
     }
     const file   = await planilhaHandle.getFile();
     const buffer = await file.arrayBuffer();
-    const wb     = new ExcelJS.Workbook();
-    await wb.xlsx.load(buffer);
-    const ws = wb.getWorksheet('ENTRADA');
-    if (!ws) throw new Error('Aba "ENTRADA" não encontrada no arquivo vinculado.');
+    const ws = await _abrirAbaEntrada(buffer);
 
     const [anoAlvo, mesAlvo, diaAlvo] = dataISO.split('-').map(Number);
     const placaAlvo = (placa || '').toUpperCase();
@@ -1981,10 +1974,8 @@ async function _atualizarTaraNaPlanilha(placa, dataISO, novaTara) {
 
     if (alteradas === 0) return; // ainda não tinha sido gravada na planilha
 
-    wb.calcProperties = wb.calcProperties || {};
-    wb.calcProperties.fullCalcOnLoad = true;
 
-    const novoBuffer = await wb.xlsx.writeBuffer();
+    const novoBuffer = await ws.salvar();
     const writable    = await planilhaHandle.createWritable();
     await writable.write(novoBuffer);
     await writable.close();
@@ -2143,6 +2134,213 @@ function buscarDescontoUmidade(umidade) {
 // Descontos, Peso Final, Acumulado, Sc/60) já existem pré-preenchidas
 // no arquivo até a linha 422 e são preservadas — nunca sobrescritas.
 
+// ══════════════════════════════════════════════════════════════════
+// EDITOR CIRÚRGICO DE .XLSX (substitui o ExcelJS na gravação)
+// ══════════════════════════════════════════════════════════════════
+// Por quê: ExcelJS lê o arquivo INTEIRO e o reescreve do zero. Em planilhas
+// grandes/complexas (muitas abas, fórmulas compartilhadas, formatação
+// condicional, etc.) ele perde ou deforma partes e o Excel abre em modo de
+// "Reparo". Aqui só mexemos no XML da aba ENTRADA (e só nas células que
+// precisam mudar); todo o resto do arquivo é devolvido byte a byte igual.
+const XlsxEntrada = (() => {
+  const NS    = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  const NS_R  = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const NS_XML = 'http://www.w3.org/XML/1998/namespace';
+  const DECL  = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+
+  const colLetra = n => { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
+  const colNum   = ref => { let n = 0; for (const ch of ref.match(/^[A-Z]+/)[0]) n = n * 26 + ch.charCodeAt(0) - 64; return n; };
+  const limpaXml = s => String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '');
+  const filhos   = (el, nome) => Array.from(el.childNodes).filter(n => n.nodeType === 1 && n.localName === nome);
+
+  async function parse(zip, caminho) {
+    const f = zip.file(caminho);
+    if (!f) return null;
+    const doc = new DOMParser().parseFromString(await f.async('string'), 'application/xml');
+    if (doc.getElementsByTagName('parsererror').length) throw new Error('XML inválido em ' + caminho);
+    return doc;
+  }
+
+  class Aba {
+    constructor(zip, wbDoc, sheetPath, sheetDoc, sharedStrings) {
+      this.zip = zip; this.wbDoc = wbDoc; this.sheetPath = sheetPath; this.doc = sheetDoc;
+      this.ss = sharedStrings; this.mudouFormulas = false;
+      this.sheetData = this.doc.getElementsByTagNameNS(NS, 'sheetData')[0];
+      this.rows = new Map();
+      for (const row of filhos(this.sheetData, 'row')) this.rows.set(parseInt(row.getAttribute('r'), 10), row);
+    }
+
+    static async abrir(buffer, nomeAba) {
+      const zip   = await JSZip.loadAsync(buffer);
+      const wbDoc = await parse(zip, 'xl/workbook.xml');
+      const sh = Array.from(wbDoc.getElementsByTagNameNS(NS, 'sheet')).find(s => s.getAttribute('name') === nomeAba);
+      if (!sh) throw new Error('Aba "' + nomeAba + '" não encontrada no arquivo vinculado.');
+      const rid  = sh.getAttributeNS(NS_R, 'id');
+      const rels = await parse(zip, 'xl/_rels/workbook.xml.rels');
+      const rel  = Array.from(rels.getElementsByTagName('Relationship')).find(x => x.getAttribute('Id') === rid);
+      if (!rel) throw new Error('Relação da aba não encontrada no arquivo.');
+      const alvo = rel.getAttribute('Target');
+      const sheetPath = alvo.startsWith('/') ? alvo.slice(1) : 'xl/' + alvo;
+      const sheetDoc  = await parse(zip, sheetPath);
+      if (!sheetDoc) throw new Error('Arquivo da aba não encontrado: ' + sheetPath);
+
+      // textos compartilhados (só leitura)
+      const ss = [];
+      const ssDoc = await parse(zip, 'xl/sharedStrings.xml');
+      if (ssDoc) {
+        for (const si of Array.from(ssDoc.getElementsByTagNameNS(NS, 'si'))) {
+          let txt = '';
+          for (const t of Array.from(si.getElementsByTagNameNS(NS, 't'))) {
+            if (t.parentNode.localName !== 'rPh') txt += t.textContent;
+          }
+          ss.push(txt);
+        }
+      }
+      return new Aba(zip, wbDoc, sheetPath, sheetDoc, ss);
+    }
+
+    // ── localizar / criar elementos ──
+    _row(r, criar) {
+      let row = this.rows.get(r);
+      if (row || !criar) return row || null;
+      row = this.doc.createElementNS(NS, 'row');
+      row.setAttribute('r', String(r));
+      const prox = Array.from(this.rows.keys()).filter(k => k > r).sort((a, b) => a - b)[0];
+      this.sheetData.insertBefore(row, prox ? this.rows.get(prox) : null);
+      this.rows.set(r, row);
+      return row;
+    }
+    _cel(r, c, criar) {
+      const row = this._row(r, criar);
+      if (!row) return null;
+      let antes = null;
+      for (const cel of filhos(row, 'c')) {
+        const n = colNum(cel.getAttribute('r'));
+        if (n === c) return cel;
+        if (n > c) { antes = cel; break; }
+      }
+      if (!criar) return null;
+      const novo = this.doc.createElementNS(NS, 'c');
+      novo.setAttribute('r', colLetra(c) + r);
+      row.removeAttribute('spans');
+      row.insertBefore(novo, antes);
+      return novo;
+    }
+    _limpar(cel) { while (cel.firstChild) cel.removeChild(cel.firstChild); cel.removeAttribute('t'); }
+
+    // ── leitura ──
+    ler(r, c) {
+      const cel = this._cel(r, c, false);
+      if (!cel) return null;
+      const t = cel.getAttribute('t');
+      const v = filhos(cel, 'v')[0];
+      if (t === 'inlineStr') { const is = filhos(cel, 'is')[0]; return is ? Array.from(is.getElementsByTagNameNS(NS, 't')).map(x => x.textContent).join('') : null; }
+      if (!v || v.textContent === '') return null;
+      const txt = v.textContent;
+      if (t === 's')   return this.ss[parseInt(txt, 10)] ?? '';
+      if (t === 'str' || t === 'e') return txt;
+      if (t === 'b')   return txt === '1';
+      const n = parseFloat(txt);
+      if (c === 2 && isFinite(n)) return new Date(Math.round((n - 25569) * 1440) * 60000); // coluna B = Data (UTC, precisão de minuto)
+      return n;
+    }
+    temFormula(r, c) { const cel = this._cel(r, c, false); return !!(cel && filhos(cel, 'f').length); }
+
+    // ── escrita (nunca mexe no atributo de estilo "s") ──
+    escrever(r, c, valor) {
+      const cel = this._cel(r, c, true);
+      this._limpar(cel);
+      if (valor === null || valor === undefined || valor === '') return;
+      if (valor instanceof Date) valor = valor.getTime() / 86400000 + 25569;
+      if (typeof valor === 'number') {
+        if (!isFinite(valor)) valor = 0;
+        const v = this.doc.createElementNS(NS, 'v'); v.textContent = String(valor); cel.appendChild(v);
+      } else {
+        cel.setAttribute('t', 'inlineStr');
+        const is = this.doc.createElementNS(NS, 'is');
+        const t  = this.doc.createElementNS(NS, 't');
+        t.setAttributeNS(NS_XML, 'xml:space', 'preserve');
+        t.textContent = limpaXml(valor);
+        is.appendChild(t); cel.appendChild(is);
+      }
+    }
+    escreverFormula(r, c, formula) {
+      const cel = this._cel(r, c, true);
+      this._limpar(cel);
+      const f = this.doc.createElementNS(NS, 'f'); f.textContent = formula; cel.appendChild(f);
+      this.mudouFormulas = true;
+    }
+    copiarEstiloLinha(deR, paraR) {
+      const origem = this._row(deR, false);
+      if (!origem) return;
+      const ro = this._row(paraR, true);
+      for (const a of ['ht', 'customHeight', 's', 'customFormat']) if (origem.hasAttribute(a)) ro.setAttribute(a, origem.getAttribute(a));
+      for (const cel of filhos(origem, 'c')) {
+        const dest = this._cel(paraR, colNum(cel.getAttribute('r')), true);
+        if (cel.hasAttribute('s')) dest.setAttribute('s', cel.getAttribute('s'));
+      }
+    }
+
+    // ── salvar: devolve o .xlsx completo (ArrayBuffer) ──
+    async salvar() {
+      const ser = new XMLSerializer();
+      this.zip.file(this.sheetPath, DECL + ser.serializeToString(this.doc));
+
+      // força recálculo total ao abrir
+      let calc = this.wbDoc.getElementsByTagNameNS(NS, 'calcPr')[0];
+      if (!calc) {
+        calc = this.wbDoc.createElementNS(NS, 'calcPr');
+        const raiz = this.wbDoc.documentElement;
+        let ref = null;
+        for (const nome of ['definedNames', 'externalReferences', 'functionGroups', 'sheets']) {
+          const el = filhos(raiz, nome)[0];
+          if (el) { ref = el; break; }
+        }
+        raiz.insertBefore(calc, ref ? ref.nextSibling : null);
+      }
+      calc.setAttribute('fullCalcOnLoad', '1');
+      this.zip.file('xl/workbook.xml', DECL + ser.serializeToString(this.wbDoc));
+
+      // se criamos fórmulas novas, a calcChain fica desatualizada → removê-la é seguro (o Excel recria)
+      if (this.mudouFormulas && this.zip.file('xl/calcChain.xml')) {
+        this.zip.remove('xl/calcChain.xml');
+        const ct = await parse(this.zip, '[Content_Types].xml');
+        for (const o of Array.from(ct.getElementsByTagName('Override'))) if (o.getAttribute('PartName') === '/xl/calcChain.xml') o.parentNode.removeChild(o);
+        this.zip.file('[Content_Types].xml', DECL + ser.serializeToString(ct));
+        const rels = await parse(this.zip, 'xl/_rels/workbook.xml.rels');
+        for (const x of Array.from(rels.getElementsByTagName('Relationship'))) if (/\/calcChain$/.test(x.getAttribute('Type'))) x.parentNode.removeChild(x);
+        this.zip.file('xl/_rels/workbook.xml.rels', DECL + ser.serializeToString(rels));
+      }
+
+      const out = await this.zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
+
+      // conferência: o arquivo gerado precisa reabrir e ter a aba legível, senão NÃO grava
+      const chk = await JSZip.loadAsync(out);
+      const d = await parse(chk, this.sheetPath);
+      if (!d || !d.getElementsByTagNameNS(NS, 'sheetData').length) throw new Error('Verificação do arquivo gerado falhou.');
+      return out;
+    }
+  }
+  return { abrir: Aba.abrir };
+})();
+
+
+// Adaptador: mantém o código antigo (ws.getCell(r,c).value) funcionando sobre o editor cirúrgico
+async function _abrirAbaEntrada(buffer) {
+  const aba = await XlsxEntrada.abrir(buffer, 'ENTRADA');
+  return {
+    _aba: aba,
+    getCell: (r, c) => ({
+      get value()  { return aba.ler(r, c); },
+      set value(v) { aba.escrever(r, c, v); },
+      get formula() { return aba.temFormula(r, c) ? 'f' : undefined; }
+    }),
+    setFormula: (r, c, f) => aba.escreverFormula(r, c, f),
+    copiarEstiloLinha: (de, para) => aba.copiarEstiloLinha(de, para),
+    salvar: () => aba.salvar()
+  };
+}
+
 function _idbOpen() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open('sistema_descargas_planilha', 1);
@@ -2297,10 +2495,7 @@ async function conectarPlanilhaAutomatica() {
 async function _escreverOrdensNaPlanilha(ordens) {
   const file    = await planilhaHandle.getFile();
   const buffer  = await file.arrayBuffer();
-  const wb      = new ExcelJS.Workbook();
-  await wb.xlsx.load(buffer);
-  const ws = wb.getWorksheet('ENTRADA');
-  if (!ws) throw new Error('Aba "ENTRADA" não encontrada no arquivo vinculado.');
+  const ws = await _abrirAbaEntrada(buffer);
 
   // Localiza a primeira linha vazia (coluna B = Data), a partir da linha 4
   let r = 4;
@@ -2337,18 +2532,15 @@ async function _escreverOrdensNaPlanilha(ordens) {
     // Se a linha passou do limite pré-formatado do arquivo (>422), recria as
     // fórmulas e a formatação manualmente, copiando da linha anterior
     if (!jaTemFormulas) {
-      const linhaAnterior = ws.getRow(r - 1);
-      linhaAnterior.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-        ws.getRow(r).getCell(colNumber).style = cell.style;
-      });
-      ws.getCell(r, 8).value  = { formula: `F${r}-G${r}` };
-      ws.getCell(r, 10).value = { formula: `(H${r}*I${r})/100` };
-      ws.getCell(r, 12).value = { formula: `VLOOKUP(K${r}, 'TABELA-DESC.-ML'!$C$8:$E$299, 3, TRUE)` };
-      ws.getCell(r, 13).value = { formula: `H${r}*(L${r}/100)` };
-      ws.getCell(r, 14).value = { formula: `J${r}+M${r}` };
-      ws.getCell(r, 15).value = { formula: `H${r}-N${r}` };
-      ws.getCell(r, 16).value = { formula: `P${r - 1}+O${r}` };
-      ws.getCell(r, 17).value = { formula: `P${r}/60` };
+      ws.copiarEstiloLinha(r - 1, r);
+      ws.setFormula(r, 8, `F${r}-G${r}`);
+      ws.setFormula(r, 10, `(H${r}*I${r})/100`);
+      ws.setFormula(r, 12, `VLOOKUP(K${r}, 'TABELA-DESC.-ML'!$C$8:$E$299, 3, TRUE)`);
+      ws.setFormula(r, 13, `H${r}*(L${r}/100)`);
+      ws.setFormula(r, 14, `J${r}+M${r}`);
+      ws.setFormula(r, 15, `H${r}-N${r}`);
+      ws.setFormula(r, 16, `P${r - 1}+O${r}`);
+      ws.setFormula(r, 17, `P${r}/60`);
       // reaplica os valores de entrada (a cópia de estilo acima não mexe em value)
       ws.getCell(r, 2).value  = dataExcel;
       ws.getCell(r, 3).value  = (o.placa || '').toUpperCase();
@@ -2363,11 +2555,8 @@ async function _escreverOrdensNaPlanilha(ordens) {
     r++;
   }
 
-  // Força o Excel a recalcular tudo assim que "Habilitar Edição" for clicado
-  wb.calcProperties = wb.calcProperties || {};
-  wb.calcProperties.fullCalcOnLoad = true;
-
-  const novoBuffer = await wb.xlsx.writeBuffer();
+  // (o recálculo total ao abrir — fullCalcOnLoad — é ligado dentro de ws.salvar())
+  const novoBuffer = await ws.salvar();
   const writable    = await planilhaHandle.createWritable();
   await writable.write(novoBuffer);
   await writable.close();
