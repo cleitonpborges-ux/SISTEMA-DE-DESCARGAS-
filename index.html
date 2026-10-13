@@ -13,6 +13,7 @@
 <title>Sistema de Descargas - v27</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700;800&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -857,6 +858,7 @@ let contador    = parseInt(localStorage.getItem(VERSAO_ATUAL + 'contador')) || 1
 let currentEditId = null;
 let planilhaHandle = null; // referência ao arquivo .xlsx vinculado (aba ENTRADA)
 let filaPendentePlanilha = _lsGet(VERSAO_ATUAL + 'filaPendentePlanilha', []); // registros aguardando gravação no arquivo
+let filaEdicoesPlanilha = _lsGet(VERSAO_ATUAL + 'filaEdicoesPlanilha', []);   // correções/taras aguardando gravação no arquivo
 
 function fmt(num) { if (!num || isNaN(num)) return ""; return Number(num).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
 function fmtInt(num) { return Number(num).toLocaleString('pt-BR', {minimumFractionDigits: 0, maximumFractionDigits: 0}); }
@@ -1804,76 +1806,20 @@ function confirmarEdicao() {
 async function _aplicarEdicaoNaPlanilha(antes, o) {
   if (!planilhaHandle) return; // nada vinculado — nada a fazer
 
-  // 1) Ordem ainda na fila (não foi gravada na planilha): só atualiza o registro pendente
+  // Carga ainda na fila (nem foi gravada na planilha): só atualiza o registro pendente.
+  // (Se ela estiver sendo gravada neste exato momento, a correção vai como edição normal.)
   const idxFila = filaPendentePlanilha.findIndex(x => x.id === o.id);
-  if (idxFila >= 0) {
+  if (idxFila >= 0 && !_idsEmGravacao.has(o.id)) {
     filaPendentePlanilha[idxFila] = { ...o };
     _lsSet('filaPendentePlanilha', filaPendentePlanilha);
     return;
   }
 
-  // 2) Já gravada: espera a fila terminar de gravar (se estiver em andamento) e edita a linha
-  for (let i = 0; i < 25 && _gravandoFila; i++) await new Promise(r => setTimeout(r, 200));
-  _gravandoFila = true;
-  try {
-    const perm = await planilhaHandle.queryPermission({ mode: 'readwrite' });
-    if (perm !== 'granted') {
-      _statusPlanilha('⚠️ Permissão de acesso perdida. A correção não foi aplicada na planilha — vincule novamente e edite de novo.', false);
-      return;
-    }
-    const file = await planilhaHandle.getFile();
-    const wb   = new ExcelJS.Workbook();
-    await wb.xlsx.load(await file.arrayBuffer());
-    const ws = wb.getWorksheet('ENTRADA');
-    if (!ws) throw new Error('Aba "ENTRADA" não encontrada no arquivo vinculado.');
-
-    const [ano, mes, dia] = antes.data.split('-').map(Number);
-    const [hh, mm] = (antes.hora || '00:00').split(':').map(Number);
-    const placaAntes = (antes.placa || '').toUpperCase();
-    const brutoAntes = Number(antes.bruto) || 0;
-
-    // Procura a linha: 1ª tentativa com data+hora+placa+bruto; 2ª só com data+placa+bruto
-    let rowAlvo = null, rowFrouxa = null;
-    let r = 4;
-    while (ws.getCell(r, 2).value !== null && ws.getCell(r, 2).value !== undefined && ws.getCell(r, 2).value !== '') {
-      const d = ws.getCell(r, 2).value;
-      const pl = (ws.getCell(r, 3).value || '').toString().toUpperCase();
-      const br = Number(ws.getCell(r, 6).value) || 0;
-      if (d instanceof Date && pl === placaAntes && br === brutoAntes &&
-          d.getUTCFullYear() === ano && (d.getUTCMonth() + 1) === mes && d.getUTCDate() === dia) {
-        if (d.getUTCHours() === (hh || 0) && d.getUTCMinutes() === (mm || 0)) { rowAlvo = r; break; }
-        if (rowFrouxa === null) rowFrouxa = r;
-      }
-      r++;
-    }
-    const linha = rowAlvo ?? rowFrouxa;
-    if (linha === null) {
-      _statusPlanilha('⚠️ Correção não aplicada: não achei essa carga (' + placaAntes + ', ' + fmtInt(brutoAntes) + ' kg) na planilha. Ajuste a linha manualmente.', false);
-      return;
-    }
-
-    ws.getCell(linha, 3).value  = (o.placa || '').toUpperCase(); // C - Placa
-    ws.getCell(linha, 4).value  = o.origem || '';                // D - Fazenda - Talhão
-    ws.getCell(linha, 5).value  = o.cultivar || '';              // E - Cultivar
-    ws.getCell(linha, 6).value  = Number(o.bruto) || 0;          // F - P. Bruto
-    ws.getCell(linha, 7).value  = Number(o.tara) || 0;           // G - P. Tara
-    ws.getCell(linha, 11).value = parseFloat(o.umidade) || 0;    // K - Um. (%)
-    // As demais colunas são fórmulas e recalculam sozinhas.
-
-    wb.calcProperties = wb.calcProperties || {};
-    wb.calcProperties.fullCalcOnLoad = true;
-    const novoBuffer = await wb.xlsx.writeBuffer();
-    const writable   = await planilhaHandle.createWritable();
-    await writable.write(novoBuffer);
-    await writable.close();
-    _statusPlanilha('✅ Correção aplicada na linha ' + linha + ' da planilha às ' + new Date().toLocaleTimeString('pt-BR'), true);
-  } catch (e) {
-    console.error(e);
-    _statusPlanilha('⚠️ Não foi possível aplicar a correção na planilha (arquivo pode estar aberto no Excel). Feche o arquivo e ajuste manualmente.', false);
-    showToast('Corrigido no app, mas NÃO na planilha');
-  } finally {
-    _gravandoFila = false;
-  }
+  // Carga já gravada: a correção entra na fila e é aplicada na planilha assim que possível.
+  // Se o arquivo estiver aberto no Excel, ela fica guardada e entra sozinha quando ele for fechado.
+  filaEdicoesPlanilha.push({ tipo: 'edicao', antes: { ...antes }, o: { ...o } });
+  _lsSet('filaEdicoesPlanilha', filaEdicoesPlanilha);
+  await processarFilaPlanilha();
 }
 
 function renderFrota() {
@@ -1951,48 +1897,9 @@ function _alterarTaraVeiculo(placa, novoValorStr) {
 // colunas já dependem de G, então recalculam sozinhas no Excel.
 async function _atualizarTaraNaPlanilha(placa, dataISO, novaTara) {
   if (!planilhaHandle) return; // nada vinculado — nada a fazer
-  try {
-    const perm = await planilhaHandle.queryPermission({ mode: 'readwrite' });
-    if (perm !== 'granted') {
-      _statusPlanilha('⚠️ Permissão de acesso perdida. A tara não pôde ser atualizada na planilha — vincule novamente.', false);
-      return;
-    }
-    const file   = await planilhaHandle.getFile();
-    const buffer = await file.arrayBuffer();
-    const wb     = new ExcelJS.Workbook();
-    await wb.xlsx.load(buffer);
-    const ws = wb.getWorksheet('ENTRADA');
-    if (!ws) throw new Error('Aba "ENTRADA" não encontrada no arquivo vinculado.');
-
-    const [anoAlvo, mesAlvo, diaAlvo] = dataISO.split('-').map(Number);
-    const placaAlvo = (placa || '').toUpperCase();
-    let r = 4;
-    let alteradas = 0;
-    while (ws.getCell(r, 2).value !== null && ws.getCell(r, 2).value !== undefined && ws.getCell(r, 2).value !== '') {
-      const dataCell  = ws.getCell(r, 2).value;
-      const placaCell = (ws.getCell(r, 3).value || '').toString().toUpperCase();
-      if (dataCell instanceof Date && placaCell === placaAlvo &&
-          dataCell.getUTCFullYear() === anoAlvo && (dataCell.getUTCMonth() + 1) === mesAlvo && dataCell.getUTCDate() === diaAlvo) {
-        ws.getCell(r, 7).value = Number(novaTara) || 0; // G - P. Tara
-        alteradas++;
-      }
-      r++;
-    }
-
-    if (alteradas === 0) return; // ainda não tinha sido gravada na planilha
-
-    wb.calcProperties = wb.calcProperties || {};
-    wb.calcProperties.fullCalcOnLoad = true;
-
-    const novoBuffer = await wb.xlsx.writeBuffer();
-    const writable    = await planilhaHandle.createWritable();
-    await writable.write(novoBuffer);
-    await writable.close();
-    _statusPlanilha('✅ Tara atualizada em ' + alteradas + ' linha(s) da planilha às ' + new Date().toLocaleTimeString('pt-BR'), true);
-  } catch (e) {
-    console.error(e);
-    _statusPlanilha('⚠️ Não foi possível atualizar a tara na planilha (arquivo pode estar aberto no Excel). Tente novamente.', false);
-  }
+  filaEdicoesPlanilha.push({ tipo: 'tara', placa, dataISO, novaTara });
+  _lsSet('filaEdicoesPlanilha', filaEdicoesPlanilha);
+  await processarFilaPlanilha();
 }
 
 function salvarFrota() {
@@ -2218,8 +2125,9 @@ async function _escolherArquivoPlanilha() {
 async function desvincularPlanilha() {
   if (!planilhaHandle) return;
   const nome = planilhaHandle.name || 'planilha';
-  const aviso = filaPendentePlanilha.length > 0
-    ? `\n\nAtenção: há ${filaPendentePlanilha.length} registro(s) ainda não gravado(s). Eles ficam guardados e serão gravados quando você vincular uma planilha novamente.`
+  const totalPend = filaPendentePlanilha.length + filaEdicoesPlanilha.length;
+  const aviso = totalPend > 0
+    ? `\n\nAtenção: há ${totalPend} registro(s)/correção(ões) ainda não gravado(s). Eles ficam guardados e serão gravados quando você vincular uma planilha novamente.`
     : '';
   if (!confirm(`Desvincular a planilha "${nome}"?\n\nOs novos lançamentos deixarão de ser gravados nela. Você pode vincular a mesma ou outra planilha quando quiser.${aviso}`)) return;
   try { await _idbDelete('planilhaEntradaHandle'); } catch (e) { console.error(e); }
@@ -2248,7 +2156,7 @@ async function restaurarPlanilhaAutomatica() {
     } else {
       planilhaHandle = handle;
       planilhaPrecisaReconectar = true;
-      _statusPlanilha('⚠️ Clique em "Vincular Planilha Automática" para reconceder acesso a: ' + handle.name, false);
+      _statusPlanilha('⚠️ Clique em "Reconectar Planilha" para reconceder acesso a: ' + handle.name, false);
     }
   } catch (e) {
     _statusPlanilha('Nenhuma planilha vinculada ainda.', false);
@@ -2289,93 +2197,334 @@ async function conectarPlanilhaAutomatica() {
   }
 }
 
-// Grava a ordem "o" na próxima linha vazia da aba ENTRADA do arquivo vinculado
-// Escreve uma lista de ordens (na ordem em que foram registradas) na aba
-// ENTRADA do arquivo, começando na primeira linha vazia. Lança erro se não
-// conseguir (ex: arquivo aberto/bloqueado no Excel) — nesse caso NENHUMA
-// escrita é feita (o arquivo original não é tocado) e a fila permanece intacta.
-async function _escreverOrdensNaPlanilha(ordens) {
-  const file    = await planilhaHandle.getFile();
-  const buffer  = await file.arrayBuffer();
-  const wb      = new ExcelJS.Workbook();
-  await wb.xlsx.load(buffer);
-  const ws = wb.getWorksheet('ENTRADA');
-  if (!ws) throw new Error('Aba "ENTRADA" não encontrada no arquivo vinculado.');
+// @@XLSX-HELPERS-INICIO
+// ══════════════════════════════════════════════════════════════════
+// EDIÇÃO DIRETA DO .XLSX — SÓ A ABA "ENTRADA"
+// ══════════════════════════════════════════════════════════════════
+// Um .xlsx é um ZIP de arquivos XML. Em vez de abrir e regravar a pasta de
+// trabalho inteira (o que reescreve TODAS as abas e pode estragar alguma
+// delas), abrimos o ZIP, trocamos só as células necessárias do XML da aba
+// ENTRADA e devolvemos todo o resto exatamente como estava.
 
-  // Localiza a primeira linha vazia (coluna B = Data), a partir da linha 4
-  let r = 4;
-  while (ws.getCell(r, 2).value !== null && ws.getCell(r, 2).value !== undefined && ws.getCell(r, 2).value !== '') {
-    r++;
+function _xlEscXml(s) {
+  return String(s)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '') // caracteres proibidos em XML
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function _xlDecXml(s) {
+  return String(s)
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)))
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+}
+function _xlColNum(letras) { let n = 0; for (const ch of letras) n = n * 26 + (ch.charCodeAt(0) - 64); return n; }
+
+// "2026-09-24" + "14:32" -> número de série do Excel (parte inteira = dia, fração = hora)
+function _xlSerial(ano, mes, dia, hh, mm) {
+  return (Date.UTC(ano, mes - 1, dia, hh || 0, mm || 0) - Date.UTC(1899, 11, 30)) / 86400000;
+}
+function _xlSerialPartes(serial) {
+  const tot  = Math.round(serial * 1440);
+  const dias = Math.floor(tot / 1440);
+  const min  = tot - dias * 1440;
+  const d    = new Date(Date.UTC(1899, 11, 30) + dias * 86400000);
+  return { ano: d.getUTCFullYear(), mes: d.getUTCMonth() + 1, dia: d.getUTCDate(), hh: Math.floor(min / 60), mm: min % 60 };
+}
+
+function _xlXmlValido(str) {
+  try {
+    const doc = new DOMParser().parseFromString(str, 'application/xml');
+    return doc.getElementsByTagName('parsererror').length === 0;
+  } catch (e) { return false; }
+}
+
+// ── Células e linhas (manipulação do texto XML, sem reserializar nada) ──
+function _xlCelAttr(xml, nome) {
+  const m = xml.match(new RegExp('^<c\\b[^>]*?\\s' + nome + '="([^"]*)"'));
+  return m ? m[1] : null;
+}
+function _xlCelVazia(xml) {
+  if (/<is\b/.test(xml)) return false;
+  const v = xml.match(/<v>([\s\S]*?)<\/v>/);
+  return !v || v[1] === '';
+}
+function _xlCelValor(xml, sst) {
+  const t = _xlCelAttr(xml, 't');
+  if (t === 'inlineStr') {
+    return [...xml.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map(x => _xlDecXml(x[1])).join('');
+  }
+  const v = xml.match(/<v>([\s\S]*?)<\/v>/);
+  if (!v) return null;
+  if (t === 's')   return sst[Number(v[1])] ?? '';
+  if (t === 'str') return _xlDecXml(v[1]);
+  if (t === 'b' || t === 'e') return null;
+  const n = Number(v[1]);
+  return Number.isFinite(n) ? n : null;
+}
+function _xlMontaCel(ref, estilo, valor) {
+  const s = estilo !== null && estilo !== undefined ? ` s="${estilo}"` : '';
+  if (valor === null || valor === undefined || valor === '') return `<c r="${ref}"${s}/>`;
+  if (typeof valor === 'number') {
+    if (!Number.isFinite(valor)) throw new Error('Número inválido para a célula ' + ref);
+    return `<c r="${ref}"${s}><v>${valor}</v></c>`;
+  }
+  const txt = _xlEscXml(valor);
+  const pres = /^\s|\s$|\n/.test(txt) ? ' xml:space="preserve"' : '';
+  return `<c r="${ref}"${s} t="inlineStr"><is><t${pres}>${txt}</t></is></c>`;
+}
+
+function _xlParseRow(str, num) {
+  let abre, inner;
+  if (str.endsWith('/>')) { abre = str.slice(0, -2).replace(/\s+$/, '') + '>'; inner = ''; }
+  else { const k = str.indexOf('>') + 1; abre = str.slice(0, k); inner = str.slice(k, str.length - 6); } // tira </row>
+  const re = /<c r="([A-Z]+)(\d+)"[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g;
+  const cells = [];
+  let m;
+  while ((m = re.exec(inner)) !== null) cells.push({ col: m[1], colN: _xlColNum(m[1]), xml: m[0] });
+  if (inner.replace(re, '').trim() !== '') throw new Error('Linha ' + num + ' da aba ENTRADA tem conteúdo inesperado — gravação cancelada para proteger o arquivo.');
+  return { num, abre, cells };
+}
+
+function _xlParseSheet(xml) {
+  const a = xml.indexOf('<sheetData>');
+  const b = xml.indexOf('</sheetData>');
+  if (a < 0 || b < 0) throw new Error('Estrutura inesperada na aba ENTRADA (sheetData).');
+  const head = xml.slice(0, a + 11), tail = xml.slice(b), body = xml.slice(a + 11, b);
+  const re = /<row r="(\d+)"[^>]*?(?:\/>|>[\s\S]*?<\/row>)/g;
+  const rows = new Map();
+  let m;
+  while ((m = re.exec(body)) !== null) rows.set(Number(m[1]), _xlParseRow(m[0], Number(m[1])));
+  if (body.replace(re, '').trim() !== '') throw new Error('A aba ENTRADA tem linhas num formato inesperado — gravação cancelada para proteger o arquivo.');
+  return {
+    rows,
+    serialize() {
+      return head + [...rows.values()].map(r => r.abre + r.cells.map(c => c.xml).join('') + '</row>').join('') + tail;
+    }
+  };
+}
+
+function _xlCel(sheet, r, col) {
+  const row = sheet.rows.get(r);
+  return row ? row.cells.find(c => c.col === col) : undefined;
+}
+function _xlGet(sheet, sst, r, col) {
+  const c = _xlCel(sheet, r, col);
+  return c ? _xlCelValor(c.xml, sst) : null;
+}
+function _xlVazia(sheet, r, col) {
+  const c = _xlCel(sheet, r, col);
+  return !c || _xlCelVazia(c.xml);
+}
+function _xlTemFormula(sheet, r, col) {
+  const c = _xlCel(sheet, r, col);
+  return !!c && /<f\b/.test(c.xml);
+}
+// Linha de lançamento = linha do modelo com as fórmulas por carga (coluna H) e SEM fórmula de soma.
+// Assim nunca escrevemos em cima da linha de totais que fica logo abaixo da área de lançamentos.
+function _xlLinhaDeLancamento(sheet, r) {
+  const row = sheet.rows.get(r);
+  if (!row || !_xlTemFormula(sheet, r, 'H')) return false;
+  return !row.cells.some(c => /<f\b[^>]*>[^<]*SUM\(/i.test(c.xml));
+}
+function _xlSet(sheet, r, col, valor) {
+  const row = sheet.rows.get(r);
+  if (!row) throw new Error('A linha ' + r + ' não existe na aba ENTRADA.');
+  const colN = _xlColNum(col);
+  const i = row.cells.findIndex(c => c.colN === colN);
+  const novo = _xlMontaCel(col + r, i >= 0 ? _xlCelAttr(row.cells[i].xml, 's') : null, valor);
+  if (i >= 0) { row.cells[i].xml = novo; return; }
+  const pos = row.cells.findIndex(c => c.colN > colN);
+  const item = { col, colN, xml: novo };
+  if (pos < 0) row.cells.push(item); else row.cells.splice(pos, 0, item);
+}
+
+// ── Acesso ao ZIP ──
+async function _xlsxCaminhoAba(zip, nomeAba) {
+  const wbF = zip.file('xl/workbook.xml'), relF = zip.file('xl/_rels/workbook.xml.rels');
+  if (!wbF || !relF) throw new Error('Arquivo não parece ser uma planilha .xlsx válida.');
+  const wbDoc  = new DOMParser().parseFromString(await wbF.async('string'), 'application/xml');
+  const relDoc = new DOMParser().parseFromString(await relF.async('string'), 'application/xml');
+  let rid = null;
+  const sheets = wbDoc.getElementsByTagName('sheet');
+  for (let i = 0; i < sheets.length; i++) if (sheets[i].getAttribute('name') === nomeAba) rid = sheets[i].getAttribute('r:id');
+  if (!rid) throw new Error('Aba "' + nomeAba + '" não encontrada no arquivo vinculado.');
+  const rels = relDoc.getElementsByTagName('Relationship');
+  for (let i = 0; i < rels.length; i++) {
+    if (rels[i].getAttribute('Id') === rid) {
+      let alvo = rels[i].getAttribute('Target');
+      alvo = alvo.startsWith('/') ? alvo.slice(1) : 'xl/' + alvo;
+      return alvo.replace(/[^/]+\/\.\.\//g, '');
+    }
+  }
+  throw new Error('Não achei o arquivo da aba "' + nomeAba + '" dentro da planilha.');
+}
+async function _xlsxSharedStrings(zip) {
+  const f = zip.file('xl/sharedStrings.xml');
+  if (!f) return [];
+  const doc = new DOMParser().parseFromString(await f.async('string'), 'application/xml');
+  const sis = doc.getElementsByTagName('si');
+  const out = [];
+  for (let i = 0; i < sis.length; i++) {
+    let t = '';
+    const ts = sis[i].getElementsByTagName('t');
+    for (let j = 0; j < ts.length; j++) {
+      const p = ts[j].parentNode.nodeName;
+      if (p === 'si' || p === 'r') t += ts[j].textContent;
+    }
+    out.push(t);
+  }
+  return out;
+}
+
+// Abre o arquivo vinculado, deixa "editor(sheet, sst)" mexer nas células da aba ENTRADA
+// e grava de volta SÓ com essa aba trocada. Se o editor devolver false, nada é gravado.
+async function _xlsxEditarEntrada(editor) {
+  if (typeof JSZip === 'undefined') throw new Error('Biblioteca JSZip não carregou (verifique a internet).');
+  const file = await planilhaHandle.getFile();
+  const zip  = await JSZip.loadAsync(await file.arrayBuffer(), { createFolders: false });
+  const caminho = await _xlsxCaminhoAba(zip, 'ENTRADA');
+  const sheet   = _xlParseSheet(await zip.file(caminho).async('string'));
+  const sst     = await _xlsxSharedStrings(zip);
+
+  const resultado = await editor(sheet, sst);
+  if (resultado === false) return false;
+
+  const novoXml = sheet.serialize();
+  if (!_xlXmlValido(novoXml)) throw new Error('A aba ENTRADA ficaria inválida — gravação cancelada para proteger o arquivo.');
+  zip.file(caminho, novoXml, { createFolders: false });
+
+  // Pede ao Excel para recalcular as fórmulas quando o arquivo for aberto
+  const wbF = zip.file('xl/workbook.xml');
+  let wbXml = await wbF.async('string');
+  if (/<calcPr\b/.test(wbXml) && !/<calcPr\b[^>]*fullCalcOnLoad/.test(wbXml)) {
+    wbXml = wbXml.replace(/<calcPr\b/, '<calcPr fullCalcOnLoad="1"');
+    zip.file('xl/workbook.xml', wbXml, { createFolders: false });
   }
 
+  const saida = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+  const writable = await planilhaHandle.createWritable();
+  await writable.write(saida);
+  await writable.close();
+  return resultado === undefined ? true : resultado;
+}
+
+// @@XLSX-HELPERS-FIM
+
+// ── Operações sobre a aba ENTRADA (cada uma só mexe no "sheet" em memória) ──
+
+// Escreve as cargas novas nas próximas linhas vazias (tudo ou nada: se não couber, lança erro)
+function _xlEscreverCargas(sheet, ordens) {
+  let r = 4;
+  while (sheet.rows.has(r) && !_xlVazia(sheet, r, 'B')) r++;
+
   for (const o of ordens) {
-    // As colunas H, J, L, M, N, O, P, Q já têm fórmulas prontas no arquivo
-    // (pré-preenchidas até a linha 422). Só preenchemos os dados brutos de
-    // entrada e deixamos essas fórmulas originais intactas — elas recalculam
-    // sozinhas assim que o Excel sai do Modo de Exibição Protegido
-    // ("Habilitar Edição").
-    const jaTemFormulas = !!(ws.getCell(r, 8).formula || ws.getCell(r, 8).value); // coluna H
-
+    // As colunas H, J, L, M, N, O, P, Q já têm fórmulas prontas nas linhas do modelo.
+    // Só preenchemos os dados de entrada e deixamos essas fórmulas intactas.
+    if (!_xlLinhaDeLancamento(sheet, r)) {
+      const e = new Error('Acabou a área de lançamentos da planilha (linha ' + r + '). Insira mais linhas na aba ENTRADA.');
+      e.codigo = 'FIM_AREA';
+      throw e;
+    }
     const [ano, mes, dia] = o.data.split('-').map(Number);
-    const [horaReg, minReg] = (o.hora || '00:00').split(':').map(Number);
-    // Date.UTC evita o bug de fuso horário (Bahia é UTC-3, então
-    // "new Date(ano,mes,dia)" local viraria 03:00 ao ser gravado no Excel).
-    // A célula continua formatada para mostrar só a data — a hora do
-    // lançamento fica guardada nela, visível ao clicar na célula.
-    const dataExcel = new Date(Date.UTC(ano, mes - 1, dia, horaReg || 0, minReg || 0, 0));
+    const [hh, mm] = (o.hora || '00:00').split(':').map(Number);
+    // Data + hora do lançamento na mesma célula (a célula só mostra a data; a hora aparece ao clicar)
+    _xlSet(sheet, r, 'B', _xlSerial(ano, mes, dia, hh || 0, mm || 0));
+    _xlSet(sheet, r, 'C', (o.placa || '').toUpperCase());   // Placa
+    _xlSet(sheet, r, 'D', o.origem || '');                  // Fazenda - Talhão
+    _xlSet(sheet, r, 'E', o.cultivar || '');                // Cultivar
+    _xlSet(sheet, r, 'F', Number(o.bruto) || 0);            // P. Bruto
+    _xlSet(sheet, r, 'G', Number(o.tara) || 0);             // P. Tara
+    _xlSet(sheet, r, 'I', 1);                               // Imp. (%) fixo
+    _xlSet(sheet, r, 'K', parseFloat(o.umidade) || 0);      // Um. (%)
+    _xlSet(sheet, r, 'R', (o.obs || '').toUpperCase());     // Obs
+    r++;
+  }
+}
 
-    ws.getCell(r, 2).value  = dataExcel;                          // B - Data
-    ws.getCell(r, 3).value  = (o.placa || '').toUpperCase();      // C - Placa
-    ws.getCell(r, 4).value  = (o.origem || '');     // D - Fazenda - Talhão
-    ws.getCell(r, 5).value  = (o.cultivar || '');   // E - Cultivar
-    ws.getCell(r, 6).value  = Number(o.bruto) || 0;               // F - P. Bruto
-    ws.getCell(r, 7).value  = Number(o.tara) || 0;                // G - P. Tara
-    ws.getCell(r, 9).value  = 1;                                  // I - Imp. (%) fixo
-    ws.getCell(r, 11).value = parseFloat(o.umidade) || 0;         // K - Um. (%)
-    ws.getCell(r, 18).value = (o.obs || '').toUpperCase();        // R - Obs
+// Acha a linha da carga como ela ERA ("antes") e grava os valores novos. Devolve o nº da linha, ou null.
+function _xlAplicarEdicao(sheet, sst, antes, o) {
+  const [ano, mes, dia] = antes.data.split('-').map(Number);
+  const [hh, mm] = (antes.hora || '00:00').split(':').map(Number);
+  const placaAntes = (antes.placa || '').toUpperCase();
+  const brutoAntes = Number(antes.bruto) || 0;
 
-    // Se a linha passou do limite pré-formatado do arquivo (>422), recria as
-    // fórmulas e a formatação manualmente, copiando da linha anterior
-    if (!jaTemFormulas) {
-      const linhaAnterior = ws.getRow(r - 1);
-      linhaAnterior.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-        ws.getRow(r).getCell(colNumber).style = cell.style;
-      });
-      ws.getCell(r, 8).value  = { formula: `F${r}-G${r}` };
-      ws.getCell(r, 10).value = { formula: `(H${r}*I${r})/100` };
-      ws.getCell(r, 12).value = { formula: `VLOOKUP(K${r}, 'TABELA-DESC.-ML'!$C$8:$E$299, 3, TRUE)` };
-      ws.getCell(r, 13).value = { formula: `H${r}*(L${r}/100)` };
-      ws.getCell(r, 14).value = { formula: `J${r}+M${r}` };
-      ws.getCell(r, 15).value = { formula: `H${r}-N${r}` };
-      ws.getCell(r, 16).value = { formula: `P${r - 1}+O${r}` };
-      ws.getCell(r, 17).value = { formula: `P${r}/60` };
-      // reaplica os valores de entrada (a cópia de estilo acima não mexe em value)
-      ws.getCell(r, 2).value  = dataExcel;
-      ws.getCell(r, 3).value  = (o.placa || '').toUpperCase();
-      ws.getCell(r, 4).value  = (o.origem || '');
-      ws.getCell(r, 5).value  = (o.cultivar || '');
-      ws.getCell(r, 6).value  = Number(o.bruto) || 0;
-      ws.getCell(r, 7).value  = Number(o.tara) || 0;
-      ws.getCell(r, 9).value  = 1;
-      ws.getCell(r, 11).value = parseFloat(o.umidade) || 0;
-      ws.getCell(r, 18).value = (o.obs || '').toUpperCase();
+  // 1ª tentativa com data+hora+placa+bruto; 2ª só com data+placa+bruto
+  let rowAlvo = null, rowFrouxa = null;
+  let r = 4;
+  while (sheet.rows.has(r) && !_xlVazia(sheet, r, 'B')) {
+    const d  = _xlGet(sheet, sst, r, 'B');
+    const pl = String(_xlGet(sheet, sst, r, 'C') ?? '').toUpperCase();
+    const br = Number(_xlGet(sheet, sst, r, 'F')) || 0;
+    if (typeof d === 'number' && pl === placaAntes && br === brutoAntes) {
+      const p = _xlSerialPartes(d);
+      if (p.ano === ano && p.mes === mes && p.dia === dia) {
+        if (p.hh === (hh || 0) && p.mm === (mm || 0)) { rowAlvo = r; break; }
+        if (rowFrouxa === null) rowFrouxa = r;
+      }
     }
     r++;
   }
+  const linha = rowAlvo ?? rowFrouxa;
+  if (linha === null) return null;
 
-  // Força o Excel a recalcular tudo assim que "Habilitar Edição" for clicado
-  wb.calcProperties = wb.calcProperties || {};
-  wb.calcProperties.fullCalcOnLoad = true;
-
-  const novoBuffer = await wb.xlsx.writeBuffer();
-  const writable    = await planilhaHandle.createWritable();
-  await writable.write(novoBuffer);
-  await writable.close();
+  _xlSet(sheet, linha, 'C', (o.placa || '').toUpperCase()); // Placa
+  _xlSet(sheet, linha, 'D', o.origem || '');                // Fazenda - Talhão
+  _xlSet(sheet, linha, 'E', o.cultivar || '');              // Cultivar
+  _xlSet(sheet, linha, 'F', Number(o.bruto) || 0);          // P. Bruto
+  _xlSet(sheet, linha, 'G', Number(o.tara) || 0);           // P. Tara
+  _xlSet(sheet, linha, 'K', parseFloat(o.umidade) || 0);    // Um. (%)
+  // As demais colunas são fórmulas e recalculam sozinhas.
+  return linha;
 }
 
-function _mostrarAvisoPendencia() {
+// Atualiza a tara (coluna G) de todas as linhas daquela placa naquela data. Devolve quantas linhas mudou.
+function _xlAplicarTara(sheet, sst, placa, dataISO, novaTara) {
+  const [anoAlvo, mesAlvo, diaAlvo] = dataISO.split('-').map(Number);
+  const placaAlvo = (placa || '').toUpperCase();
+  let n = 0, r = 4;
+  while (sheet.rows.has(r) && !_xlVazia(sheet, r, 'B')) {
+    const d  = _xlGet(sheet, sst, r, 'B');
+    const pl = String(_xlGet(sheet, sst, r, 'C') ?? '').toUpperCase();
+    if (typeof d === 'number' && pl === placaAlvo) {
+      const p = _xlSerialPartes(d);
+      if (p.ano === anoAlvo && p.mes === mesAlvo && p.dia === diaAlvo) {
+        _xlSet(sheet, r, 'G', Number(novaTara) || 0);
+        n++;
+      }
+    }
+    r++;
+  }
+  return n;
+}
+
+// Grava de UMA vez (um só abrir/salvar do arquivo): primeiro as cargas novas, depois as
+// correções e taras, na ordem em que foram feitas. Devolve o resultado de cada correção.
+async function _gravarFilaNaPlanilha(cargas, ops) {
+  const resultados = [];
+  await _xlsxEditarEntrada(async (sheet, sst) => {
+    let alterou = false;
+    if (cargas.length) { _xlEscreverCargas(sheet, cargas); alterou = true; }
+    for (const op of ops) {
+      if (op.tipo === 'tara') {
+        const n = _xlAplicarTara(sheet, sst, op.placa, op.dataISO, op.novaTara);
+        resultados.push({ op, ok: n > 0, n });
+        if (n > 0) alterou = true;
+      } else {
+        const linha = _xlAplicarEdicao(sheet, sst, op.antes, op.o);
+        resultados.push({ op, ok: linha !== null, linha });
+        if (linha !== null) alterou = true;
+      }
+    }
+    if (!alterou) return false; // nada a gravar: não mexe no arquivo
+  });
+  return resultados;
+}
+
+const _AVISO_PADRAO = '⚠️ PLANILHA ABERTA — POR FAVOR FECHE PARA LANÇAMENTO DOS DADOS!';
+function _mostrarAvisoPendencia(msg) {
   const banner = document.getElementById('aviso-planilha-pendente');
   if (!banner) return;
+  banner.textContent = msg || _AVISO_PADRAO;
   banner.style.display = 'block';
 }
 function _esconderAvisoPendencia() {
@@ -2391,41 +2540,65 @@ async function salvarNaPlanilhaAutomatica(o) {
   await processarFilaPlanilha();
 }
 
-// Tenta gravar TODOS os registros pendentes de uma vez, na ordem correta.
-// Chamada automaticamente (ao registrar, ao voltar para a aba, periodicamente)
+// Tenta gravar TUDO que está pendente (cargas novas, correções e taras) de uma vez, na ordem certa.
+// Chamada automaticamente (ao registrar/editar, ao voltar para a aba, periodicamente)
 // e também pelo botão "Tentar Agora" do aviso.
 let _gravandoFila = false;
+let _novaRodada = false;          // chegou algo novo enquanto estava gravando: roda de novo ao terminar
+let _idsEmGravacao = new Set();   // cargas que estão sendo gravadas neste momento
 async function processarFilaPlanilha() {
-  if (_gravandoFila) return; // evita chamadas concorrentes
-  if (!planilhaHandle || filaPendentePlanilha.length === 0) {
-    if (filaPendentePlanilha.length === 0) _esconderAvisoPendencia();
-    return;
-  }
+  if (_gravandoFila) { _novaRodada = true; return; } // evita gravações simultâneas
+  if (filaPendentePlanilha.length === 0 && filaEdicoesPlanilha.length === 0) { _esconderAvisoPendencia(); return; }
+  if (!planilhaHandle) return;
   _gravandoFila = true;
   try {
     const perm = await planilhaHandle.queryPermission({ mode: 'readwrite' });
     if (perm !== 'granted') {
-      _mostrarAvisoPendencia();
+      _mostrarAvisoPendencia('⚠️ CLIQUE EM RECONECTAR PLANILHA PARA LANÇAR OS DADOS!');
       planilhaPrecisaReconectar = true;
-      _statusPlanilha('⚠️ Permissão de acesso perdida. Clique em "Vincular Planilha Automática".', false);
+      _statusPlanilha('⚠️ Clique em "Reconectar Planilha" para reconceder acesso a: ' + (planilhaHandle.name || 'planilha'), false);
       return;
     }
 
-    const qtd = filaPendentePlanilha.length;
-    await _escreverOrdensNaPlanilha(filaPendentePlanilha);
+    const cargas = filaPendentePlanilha.slice();
+    const ops    = filaEdicoesPlanilha.slice();
+    _idsEmGravacao = new Set(cargas.map(c => c.id));
+    const resultados = await _gravarFilaNaPlanilha(cargas, ops);
 
-    // Sucesso: esvazia a fila
-    filaPendentePlanilha = [];
+    // Sucesso: tira da fila SÓ o que acabou de ser gravado (algo novo pode ter entrado durante a gravação)
+    filaPendentePlanilha = filaPendentePlanilha.filter(x => !_idsEmGravacao.has(x.id));
+    filaEdicoesPlanilha  = filaEdicoesPlanilha.filter(x => !ops.includes(x));
     _lsSet('filaPendentePlanilha', filaPendentePlanilha);
-    _esconderAvisoPendencia();
-    _statusPlanilha('✅ ' + qtd + ' registro(s) gravado(s) às ' + new Date().toLocaleTimeString('pt-BR'), true);
+    _lsSet('filaEdicoesPlanilha', filaEdicoesPlanilha);
+    if (filaPendentePlanilha.length === 0 && filaEdicoesPlanilha.length === 0) _esconderAvisoPendencia();
+
+    // Mensagem de status
+    const hora = new Date().toLocaleTimeString('pt-BR');
+    const partes = [];
+    if (cargas.length) partes.push(cargas.length + ' registro(s) gravado(s)');
+    const edOk = resultados.filter(r => r.op.tipo === 'edicao' && r.ok);
+    if (edOk.length === 1) partes.push('Correção aplicada na linha ' + edOk[0].linha + ' da planilha');
+    else if (edOk.length > 1) partes.push(edOk.length + ' correções aplicadas na planilha');
+    const taraOk = resultados.filter(r => r.op.tipo === 'tara' && r.ok);
+    if (taraOk.length) partes.push('Tara atualizada em ' + taraOk.reduce((s, r) => s + r.n, 0) + ' linha(s)');
+    const naoAchou = resultados.filter(r => r.op.tipo === 'edicao' && !r.ok);
+
+    let texto = partes.length ? '✅ ' + partes.join(' · ') + ' às ' + hora : '';
+    if (naoAchou.length) {
+      const lista = naoAchou.map(r => (r.op.antes.placa || '').toUpperCase() + ' ' + fmtInt(Number(r.op.antes.bruto) || 0) + ' kg').join('; ');
+      texto += (texto ? '  ' : '') + '⚠️ Correção não aplicada (não achei a carga na planilha — ajuste manualmente): ' + lista;
+    }
+    _statusPlanilha(texto || '✅ Planilha em dia às ' + hora, naoAchou.length === 0);
   } catch (e) {
     console.error(e);
     const msg = (e && e.message) ? e.message : String(e);
-    _mostrarAvisoPendencia();
-    _statusPlanilha('⚠️ ' + filaPendentePlanilha.length + ' registro(s) pendente(s) de gravação.', false);
+    _mostrarAvisoPendencia(e && e.codigo === 'FIM_AREA' ? '⚠️ ' + msg.toUpperCase() : undefined);
+    // O motivo técnico fica só no console; na tela aparece apenas o aviso laranja da caixa.
+    _statusPlanilha(planilhaHandle ? '📄 Planilha conectada: ' + planilhaHandle.name : '', true);
   } finally {
     _gravandoFila = false;
+    _idsEmGravacao = new Set();
+    if (_novaRodada) { _novaRodada = false; processarFilaPlanilha(); }
   }
 }
 
